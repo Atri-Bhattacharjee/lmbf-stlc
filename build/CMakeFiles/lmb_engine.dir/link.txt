@@ -1,0 +1,1 @@
+/usr/bin/c++ -fPIC -flto=auto -Wl,--dependency-file=CMakeFiles/lmb_engine.dir/link.d -shared  -o lmb_engine.cpython-312-x86_64-linux-gnu.so CMakeFiles/lmb_engine.dir/src/main.cpp.o
