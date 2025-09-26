@@ -20,7 +20,7 @@ find_package(pybind11 REQUIRED)
 
 # --- Python Module Target ---
 # Create the Python module target named 'lmb_engine' that will be importable in Python
-pybind11_add_module(lmb_engine src/main.cpp)
+pybind11_add_module(lmb_engine src/main.cpp src/linear_propagator.cpp)
 
 # --- Include Directories ---
 # Make the src directory available as an include directory
