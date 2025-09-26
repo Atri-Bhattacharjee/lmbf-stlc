@@ -1,43 +1,52 @@
-# Build System Artifacts
+# ===================================================================
+# 1. Build System Artifacts
+# ===================================================================
 # Ignore the directory where CMake will place all build files.
-build
+build/
 
 # Ignore Visual Studio and MSVC specific files
 .sln
 .vcxproj
 .suo
 .user
-Debug
-Release
-x64
-.vs
+Debug/
+Release/
+x64/
+.vs/
 
-# 3. Compiled Code and Binaries
+# ===================================================================
+# 2. Compiled Code and Binaries
+# ===================================================================
 # Ignore all compiled output from the C++ compiler and linker.
-.obj
-.o
-.lib
-.dll
-.so
-.exe
-.pyd
+*.obj
+*.o
+*.lib
+*.dll
+*.so
+*.exe
+*.pyd
 
-# 4. Python Artifacts
+# ===================================================================
+# 3. Python Artifacts
+# ===================================================================
 # Ignore Python virtual environments, which should not be version controlled.
-venv
-env
-.venv
-.env
+venv/
+env/
+.venv/
+.env/
 
 # Ignore Python bytecode and caches
-.pyc
-__pycache__
+*.pyc
+__pycache__/
 
-# 5. Common OS and Editor Files
+# ===================================================================
+# 4. Common OS, Editor, and Log Files
+# ===================================================================
 # Ignore metadata files from common editors and operating systems.
-.vscode
-.idea
+.vscode/
+.idea/
 Thumbs.db
-.DS_Store```
+.DS_Store
 
-/build
+# Ignore log files
+*.log
