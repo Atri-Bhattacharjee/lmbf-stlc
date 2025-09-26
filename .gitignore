@@ -1,4 +1,4 @@
-
+external
 
 # Build System Artifacts
 # Ignore the directory where CMake will place all build files.
@@ -43,4 +43,4 @@ Thumbs.db
 .DS_Store```
 
 /build
-
+/external
