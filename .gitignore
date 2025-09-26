@@ -1,10 +1,6 @@
 
-# 1. Dependency Management
-# Ignore the entire external directory, which contains the vcpkg library manager.
-# This is critical to keep the repository small and clean.
-external
 
-# 2. Build System Artifacts
+# Build System Artifacts
 # Ignore the directory where CMake will place all build files.
 build
 
@@ -46,6 +42,5 @@ __pycache__
 Thumbs.db
 .DS_Store```
 
-/external
 /build
 
