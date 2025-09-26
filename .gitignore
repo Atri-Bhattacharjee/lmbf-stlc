@@ -1,3 +1,4 @@
+
 # 1. Dependency Management
 # Ignore the entire external directory, which contains the vcpkg library manager.
 # This is critical to keep the repository small and clean.
@@ -44,3 +45,7 @@ __pycache__
 .idea
 Thumbs.db
 .DS_Store```
+
+/external
+/build
+
