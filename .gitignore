@@ -1,2 +1,51 @@
+
+# 1. Dependency Management
+# Ignore the entire external directory, which contains the vcpkg library manager.
+# This is critical to keep the repository small and clean.
+external
+
+# 2. Build System Artifacts
+# Ignore the directory where CMake will place all build files.
+build
+
+# Ignore Visual Studio and MSVC specific files
+.sln
+.vcxproj
+.suo
+.user
+Debug
+Release
+x64
+.vs
+
+# 3. Compiled Code and Binaries
+# Ignore all compiled output from the C++ compiler and linker.
+.obj
+.o
+.lib
+.dll
+.so
+.exe
+.pyd
+
+# 4. Python Artifacts
+# Ignore Python virtual environments, which should not be version controlled.
+venv
+env
+.venv
+.env
+
+# Ignore Python bytecode and caches
+.pyc
+__pycache__
+
+# 5. Common OS and Editor Files
+# Ignore metadata files from common editors and operating systems.
+.vscode
+.idea
+Thumbs.db
+.DS_Store```
+
 /external
 /build
+
