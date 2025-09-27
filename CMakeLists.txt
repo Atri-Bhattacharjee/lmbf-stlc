@@ -1,6 +1,11 @@
 # --- CMake Configuration ---
 cmake_minimum_required(VERSION 3.15)
 
+# --- Vcpkg Integration ---
+# Set the vcpkg toolchain file before the project() command to ensure CMake can find all libraries installed by vcpkg
+set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/external/vcpkg/scripts/buildsystems/vcpkg.cmake"
+    CACHE STRING "Vcpkg toolchain file")
+
 # --- Project Definition ---
 project(smc_lmb_tracker LANGUAGES CXX)
 
@@ -9,39 +14,18 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # --- Project Dependencies ---
-# Find required libraries using system packages
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(EIGEN3 REQUIRED eigen3)
-
-# Try to find pybind11
-find_package(pybind11 QUIET)
-if(NOT pybind11_FOUND)
-    # Try to find Python and pybind11 manually
-    find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
-    execute_process(
-        COMMAND ${Python3_EXECUTABLE} -c "import pybind11; print(pybind11.get_cmake_dir())"
-        OUTPUT_VARIABLE _pybind11_dir
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-    )
-    if(_pybind11_dir)
-        set(pybind11_DIR ${_pybind11_dir})
-        find_package(pybind11 REQUIRED)
-    else()
-        message(FATAL_ERROR "pybind11 not found. Please install it with: pip install pybind11")
-    endif()
-endif()
+# Find required libraries managed by vcpkg
+find_package(Eigen3 REQUIRED)
+find_package(pybind11 REQUIRED)
 
 # --- Python Module Target ---
 # Create the Python module target named 'lmb_engine' that will be importable in Python
-pybind11_add_module(lmb_engine src/main.cpp src/linear_propagator.cpp)
+pybind11_add_module(lmb_engine src/main.cpp src/linear_propagator.cpp src/simple_sensor_model.cpp)
 
 # --- Include Directories ---
 # Make the src directory available as an include directory
 target_include_directories(lmb_engine PUBLIC src)
 
-# Add Eigen3 include directories
-target_include_directories(lmb_engine PRIVATE ${EIGEN3_INCLUDE_DIRS})
-
-# --- Compiler definitions ---
-target_compile_definitions(lmb_engine PRIVATE ${EIGEN3_CFLAGS_OTHER})
+# --- Link Libraries ---
+# Link the Eigen3 library to the Python module target
+target_link_libraries(lmb_engine PRIVATE Eigen3::Eigen)
