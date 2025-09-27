@@ -29,3 +29,11 @@ target_include_directories(lmb_engine PUBLIC src)
 # --- Link Libraries ---
 # Link the Eigen3 library to the Python module target
 target_link_libraries(lmb_engine PRIVATE Eigen3::Eigen)
+
+# --- Set Output Directory for Python Package ---
+# This command places the compiled .pyd file inside the python/lmb_engine
+# directory, making it part of a proper Python package.
+set_target_properties(lmb_engine PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/python/lmb_engine"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/python/lmb_engine"
+)
