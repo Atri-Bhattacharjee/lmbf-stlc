@@ -19,6 +19,7 @@ pybind11_add_module(lmb_engine
     src/linear_propagator.cpp 
     src/simple_sensor_model.cpp
     src/adaptive_birth_model.cpp
+    src/smc_lmb_tracker.cpp
 )
 
 # --- Include Directories ---
