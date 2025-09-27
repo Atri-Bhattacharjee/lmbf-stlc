@@ -12,7 +12,31 @@ SMC_LMB_Tracker::SMC_LMB_Tracker(std::unique_ptr<IOrbitPropagator> propagator,
 }
 
 void SMC_LMB_Tracker::predict(double dt) {
-    // TODO: Implement prediction step
+    // Projects the filter state forward in time.
+    current_state_.set_timestamp(current_state_.timestamp() + dt);
+    
+    // Get a mutable copy of tracks for modification
+    std::vector<Track> tracks = current_state_.tracks();
+    
+    for (Track& track : tracks) {
+        // Update existence probability by applying survival probability
+        track.set_existence_probability(track.existence_probability() * survival_probability_);
+        
+        // Propagate particles
+        std::vector<Particle> propagated_particles;
+        propagated_particles.reserve(track.particles().size());
+        
+        for (const Particle& particle : track.particles()) {
+            Particle new_particle = propagator_->propagate(particle, dt);
+            propagated_particles.push_back(new_particle);
+        }
+        
+        // Replace track's old particle cloud with propagated particles
+        track.set_particles(propagated_particles);
+    }
+    
+    // Set the modified tracks back to the state
+    current_state_.set_tracks(tracks);
 }
 
 void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
