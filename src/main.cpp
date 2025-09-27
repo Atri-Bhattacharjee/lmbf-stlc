@@ -29,15 +29,24 @@ PYBIND11_MODULE(lmb_engine, m) {
         .def_property("existence_probability", &Track::existence_probability, &Track::set_existence_probability)
         .def_property("particles", &Track::particles, &Track::set_particles);
     
+    // Bind abstract base interfaces
+    pybind11::class_<IOrbitPropagator>(m, "IOrbitPropagator");
+    pybind11::class_<ISensorModel>(m, "ISensorModel");
+    pybind11::class_<IBirthModel>(m, "IBirthModel");
+    
     // Bind concrete model implementations
-    pybind11::class_<LinearPropagator>(m, "LinearPropagator")
-        .def(pybind11::init<>());
+    pybind11::class_<LinearPropagator, IOrbitPropagator>(m, "LinearPropagator")
+        .def(pybind11::init<>(), "Default constructor for LinearPropagator");
     
-    pybind11::class_<SimpleSensorModel>(m, "SimpleSensorModel")
-        .def(pybind11::init<>());
+    pybind11::class_<SimpleSensorModel, ISensorModel>(m, "SimpleSensorModel")
+        .def(pybind11::init<>(), "Default constructor for SimpleSensorModel");
     
-    pybind11::class_<AdaptiveBirthModel>(m, "AdaptiveBirthModel")
-        .def(pybind11::init<int, double, const Eigen::MatrixXd&>());
+    pybind11::class_<AdaptiveBirthModel, IBirthModel>(m, "AdaptiveBirthModel")
+        .def(pybind11::init<int, double, const Eigen::MatrixXd&>(),
+             pybind11::arg("particles_per_track"),
+             pybind11::arg("initial_existence_probability"),
+             pybind11::arg("initial_covariance"),
+             "Constructor for AdaptiveBirthModel");
     
     // Bind the main tracker class with a custom factory function
     pybind11::class_<SMC_LMB_Tracker>(m, "SMC_LMB_Tracker")
