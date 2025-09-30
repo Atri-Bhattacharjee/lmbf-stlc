@@ -30,6 +30,27 @@ private:
     std::shared_ptr<IBirthModel> birth_model_;         //!< Shared pointer to the birth model
     double survival_probability_;                       //!< Configuration parameter for track survival probability
 
+    // A struct to hold a single data association hypothesis
+    struct Hypothesis {
+        // Index `i` of the vector corresponds to track `i`.
+        // The value at that index is the measurement index it's associated with.
+        // A value of -1 indicates a missed detection for that track.
+        std::vector<int> associations;
+        double weight;
+    };
+
+    // Helper to compute the likelihood of a track-measurement pair by averaging over its particles.
+    double compute_association_likelihood(const Track& track, const Measurement& measurement) const;
+
+    // Helper to generate all possible hypotheses via recursion (brute-force).
+    void generate_hypotheses_recursive(
+        int track_idx,
+        std::vector<int>& current_association,
+        std::vector<bool>& meas_is_used,
+        const std::vector<Track>& tracks,
+        const std::vector<Measurement>& measurements,
+        std::vector<Hypothesis>& out_hypotheses) const;
+
 public:
     /**
      * @brief Default constructor
