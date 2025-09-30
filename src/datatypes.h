@@ -36,6 +36,8 @@ struct Particle {
     //! [x, y, z, vx, vy, vz, bc] where position is ECI in km, velocity is ECI in km/s, and bc is the ballistic coefficient in m²/kg
     Eigen::VectorXd state_vector;
     double weight;  //!< The probability weight of this particle
+
+    Particle() : state_vector(7), weight(0.0) {}
 };
 
 /**
@@ -51,6 +53,11 @@ private:
     std::vector<Particle> particles_;     //!< The cloud of weighted particles representing the state probability density p(x)
 
 public:
+    /**
+     * @brief Default constructor: label birth_time=0, index=0; existence_probability=0; empty particles
+     */
+    Track() : label_{0, 0}, existence_probability_(0.0), particles_{} {}
+
     /**
      * @brief Construct a new Track object
      * 
@@ -104,6 +111,9 @@ struct Measurement {
     Eigen::VectorXd value_;              //!< The measurement vector
     Eigen::MatrixXd covariance_;         //!< The 3x3 measurement noise covariance matrix
     std::string sensor_id_;              //!< Identifier for the sensor that produced the measurement
+
+    Measurement()
+        : timestamp_(0.0), value_(Eigen::VectorXd::Zero(3)), covariance_(Eigen::MatrixXd::Zero(3,3)), sensor_id_{} {}
 };
 
 /**
@@ -119,11 +129,10 @@ private:
 
 public:
     /**
-     * @brief Construct a new Filter State object
-     * 
-     * @param timestamp The timestamp for this filter state
-     * @param tracks The initial tracks
+     * @brief Default constructor: timestamp=0, empty tracks
      */
+    FilterState() : timestamp_(0.0), tracks_{} {}
+
     FilterState(double timestamp, const std::vector<Track>& tracks)
         : timestamp_(timestamp), tracks_(tracks) {}
 

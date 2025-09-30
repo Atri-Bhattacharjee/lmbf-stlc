@@ -25,12 +25,17 @@
 class SMC_LMB_Tracker {
 private:
     FilterState current_state_;                         //!< Stores the current list of tracks and timestamp
-    std::unique_ptr<IOrbitPropagator> propagator_;     //!< Smart pointer to the propagator model
-    std::unique_ptr<ISensorModel> sensor_model_;       //!< Smart pointer to the sensor model
-    std::unique_ptr<IBirthModel> birth_model_;         //!< Smart pointer to the birth model
+    std::shared_ptr<IOrbitPropagator> propagator_;     //!< Shared pointer to the propagator model
+    std::shared_ptr<ISensorModel> sensor_model_;       //!< Shared pointer to the sensor model
+    std::shared_ptr<IBirthModel> birth_model_;         //!< Shared pointer to the birth model
     double survival_probability_;                       //!< Configuration parameter for track survival probability
 
 public:
+    /**
+     * @brief Default constructor
+     */
+    SMC_LMB_Tracker() : current_state_(0.0, std::vector<Track>{}), propagator_(nullptr), sensor_model_(nullptr), birth_model_(nullptr), survival_probability_(0.0) {}
+
     /**
      * @brief Construct a new SMC_LMB_Tracker object
      * 
@@ -39,10 +44,10 @@ public:
      * @param birth_model Unique pointer to birth model
      * @param survival_probability Probability of a track surviving a time step
      */
-    SMC_LMB_Tracker(std::unique_ptr<IOrbitPropagator> propagator,
-                    std::unique_ptr<ISensorModel> sensor_model,
-                    std::unique_ptr<IBirthModel> birth_model,
-                    double survival_probability);
+    SMC_LMB_Tracker(std::shared_ptr<IOrbitPropagator> propagator,
+                   std::shared_ptr<ISensorModel> sensor_model,
+                   std::shared_ptr<IBirthModel> birth_model,
+                   double survival_probability);
 
     /**
      * @brief Run the predict step of the filter

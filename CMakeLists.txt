@@ -22,18 +22,30 @@ pybind11_add_module(lmb_engine
     src/smc_lmb_tracker.cpp
 )
 
+# --- Minimal Test Python Module Target ---
+pybind11_add_module(pybind11_test src/pybind11_test.cpp)
+set_target_properties(pybind11_test PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/python"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/python"
+)
+
+# --- Minimal Linear Propagator Test Module ---
+pybind11_add_module(minimal_linear_propagator src/minimal_linear_propagator.cpp)
+set_target_properties(minimal_linear_propagator PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/python/minimal_linear_propagator"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/python/minimal_linear_propagator"
+)
+
 # --- Include Directories ---
-# Make the src directory available as an include directory
 target_include_directories(lmb_engine PUBLIC src)
 
 # --- Link Libraries ---
-# Link the Eigen3 library to the Python module target
 target_link_libraries(lmb_engine PRIVATE Eigen3::Eigen)
 
 # --- Set Output Directory for Python Package ---
-# This command places the compiled .pyd file inside the python/lmb_engine
-# directory, making it part of a proper Python package.
 set_target_properties(lmb_engine PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/python/lmb_engine"
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/python/lmb_engine"
+    LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}/python/lmb_engine/Debug"
+    LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/python/lmb_engine/Release"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}/python/lmb_engine/Debug"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/python/lmb_engine/Release"
 )

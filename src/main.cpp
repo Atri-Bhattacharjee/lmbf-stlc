@@ -23,53 +23,82 @@ PYBIND11_MODULE(lmb_engine, m) {
         .def_readwrite("state_vector", &Particle::state_vector)
         .def_readwrite("weight", &Particle::weight);
     
+    pybind11::class_<Measurement>(m, "Measurement")
+        .def(pybind11::init<>())
+        .def_readwrite("timestamp_", &Measurement::timestamp_)
+        .def_readwrite("value_", &Measurement::value_)
+        .def_readwrite("covariance_", &Measurement::covariance_)
+        .def_readwrite("sensor_id_", &Measurement::sensor_id_);
+    
     pybind11::class_<Track>(m, "Track")
+        .def(pybind11::init<>())
         .def(pybind11::init<const TrackLabel&, double, const std::vector<Particle>&>())
-        .def_property("label", &Track::label, nullptr)
-        .def_property("existence_probability", &Track::existence_probability, &Track::set_existence_probability)
-        .def_property("particles", &Track::particles, &Track::set_particles);
+        .def("label", &Track::label, pybind11::return_value_policy::reference_internal)
+        .def("existence_probability", &Track::existence_probability)
+        .def("particles", &Track::particles, pybind11::return_value_policy::reference_internal)
+        .def("set_existence_probability", &Track::set_existence_probability)
+        .def("set_particles", &Track::set_particles);
+    
+    pybind11::class_<FilterState>(m, "FilterState")
+        .def(pybind11::init<>())
+        .def(pybind11::init<double, const std::vector<Track>&>())
+        .def("timestamp", &FilterState::timestamp)
+        .def("tracks", &FilterState::tracks, pybind11::return_value_policy::reference_internal)
+        .def("set_timestamp", &FilterState::set_timestamp)
+        .def("set_tracks", &FilterState::set_tracks);
     
     // Bind abstract base interfaces
-    pybind11::class_<IOrbitPropagator>(m, "IOrbitPropagator");
-    pybind11::class_<ISensorModel>(m, "ISensorModel");
-    pybind11::class_<IBirthModel>(m, "IBirthModel");
+    pybind11::class_<IOrbitPropagator, std::shared_ptr<IOrbitPropagator>>(m, "IOrbitPropagator");
+    pybind11::class_<ISensorModel, std::shared_ptr<ISensorModel>>(m, "ISensorModel");
+    pybind11::class_<IBirthModel, std::shared_ptr<IBirthModel>>(m, "IBirthModel");
     
     // Bind concrete model implementations
-    pybind11::class_<LinearPropagator, IOrbitPropagator>(m, "LinearPropagator")
-        .def(pybind11::init<>(), "Default constructor for LinearPropagator");
+    pybind11::class_<LinearPropagator, IOrbitPropagator, std::shared_ptr<LinearPropagator>>(m, "LinearPropagator")
+        .def(pybind11::init<>(), "Default constructor for LinearPropagator")
+        .def("propagate", &LinearPropagator::propagate);
     
-    pybind11::class_<SimpleSensorModel, ISensorModel>(m, "SimpleSensorModel")
-        .def(pybind11::init<>(), "Default constructor for SimpleSensorModel");
+    pybind11::class_<SimpleSensorModel, ISensorModel, std::shared_ptr<SimpleSensorModel>>(m, "SimpleSensorModel")
+        .def(pybind11::init<>(), "Default constructor for SimpleSensorModel")
+        .def("calculate_likelihood", &SimpleSensorModel::calculate_likelihood);
     
-    pybind11::class_<AdaptiveBirthModel, IBirthModel>(m, "AdaptiveBirthModel")
+    pybind11::class_<AdaptiveBirthModel, IBirthModel, std::shared_ptr<AdaptiveBirthModel>>(m, "AdaptiveBirthModel")
         .def(pybind11::init<int, double, const Eigen::MatrixXd&>(),
              pybind11::arg("particles_per_track"),
              pybind11::arg("initial_existence_probability"),
              pybind11::arg("initial_covariance"),
-             "Constructor for AdaptiveBirthModel");
+             "Constructor for AdaptiveBirthModel")
+        .def("generate_new_tracks", &AdaptiveBirthModel::generate_new_tracks);
     
-    // Bind the main tracker class with a custom factory function
-    pybind11::class_<SMC_LMB_Tracker>(m, "SMC_LMB_Tracker")
+    // Bind the main tracker class with direct constructor support
+    pybind11::class_<SMC_LMB_Tracker, std::shared_ptr<SMC_LMB_Tracker>>(m, "SMC_LMB_Tracker")
+        .def(pybind11::init<>(), "Default constructor for SMC_LMB_Tracker")
+        .def(pybind11::init<std::shared_ptr<IOrbitPropagator>, std::shared_ptr<ISensorModel>, std::shared_ptr<IBirthModel>, double>(),
+             pybind11::arg("propagator"),
+             pybind11::arg("sensor_model"),
+             pybind11::arg("birth_model"),
+             pybind11::arg("survival_probability"),
+             "Constructor for SMC_LMB_Tracker with model dependencies")
         .def("predict", &SMC_LMB_Tracker::predict, "Runs the predict step for a given time delta")
-        .def("get_tracks", &SMC_LMB_Tracker::get_tracks, "Gets the current list of tracks")
+        .def("update", &SMC_LMB_Tracker::update, "Runs the update step with measurements")
+        .def("get_tracks", &SMC_LMB_Tracker::get_tracks, "Gets the current list of tracks", pybind11::return_value_policy::reference_internal)
         .def("set_tracks", &SMC_LMB_Tracker::set_tracks, "Sets the initial list of tracks for the filter");
     
-    // Factory function to create SMC_LMB_Tracker with proper unique_ptr management
+    // Factory functions for convenience (optional - can remove if not needed)
     m.def("create_smc_lmb_tracker", [](double survival_probability) {
-        auto propagator = std::make_unique<LinearPropagator>();
-        auto sensor_model = std::make_unique<SimpleSensorModel>();
+        auto propagator = std::make_shared<LinearPropagator>();
+        auto sensor_model = std::make_shared<SimpleSensorModel>();
         Eigen::MatrixXd covariance = Eigen::MatrixXd::Identity(7, 7) * 0.1;  // Default covariance
-        auto birth_model = std::make_unique<AdaptiveBirthModel>(100, 0.1, covariance);  // Default parameters
+        auto birth_model = std::make_shared<AdaptiveBirthModel>(100, 0.1, covariance);  // Default parameters
         
-        return new SMC_LMB_Tracker(std::move(propagator), std::move(sensor_model), std::move(birth_model), survival_probability);
+        return std::make_shared<SMC_LMB_Tracker>(propagator, sensor_model, birth_model, survival_probability);
     }, "Creates a new SMC_LMB_Tracker with default model implementations");
     
     // Customizable factory function
     m.def("create_custom_smc_lmb_tracker", [](int particles_per_track, double initial_existence_prob, const Eigen::MatrixXd& covariance, double survival_probability) {
-        auto propagator = std::make_unique<LinearPropagator>();
-        auto sensor_model = std::make_unique<SimpleSensorModel>();
-        auto birth_model = std::make_unique<AdaptiveBirthModel>(particles_per_track, initial_existence_prob, covariance);
+        auto propagator = std::make_shared<LinearPropagator>();
+        auto sensor_model = std::make_shared<SimpleSensorModel>();
+        auto birth_model = std::make_shared<AdaptiveBirthModel>(particles_per_track, initial_existence_prob, covariance);
         
-        return new SMC_LMB_Tracker(std::move(propagator), std::move(sensor_model), std::move(birth_model), survival_probability);
+        return std::make_shared<SMC_LMB_Tracker>(propagator, sensor_model, birth_model, survival_probability);
     }, "Creates a new SMC_LMB_Tracker with custom birth model parameters");
 }

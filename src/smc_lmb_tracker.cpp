@@ -1,8 +1,8 @@
 #include "smc_lmb_tracker.h"
 
-SMC_LMB_Tracker::SMC_LMB_Tracker(std::unique_ptr<IOrbitPropagator> propagator,
-                                 std::unique_ptr<ISensorModel> sensor_model,
-                                 std::unique_ptr<IBirthModel> birth_model,
+SMC_LMB_Tracker::SMC_LMB_Tracker(std::shared_ptr<IOrbitPropagator> propagator,
+                                 std::shared_ptr<ISensorModel> sensor_model,
+                                 std::shared_ptr<IBirthModel> birth_model,
                                  double survival_probability)
     : current_state_(0.0, std::vector<Track>{}),  // Initialize with timestamp 0.0 and empty track list
       propagator_(std::move(propagator)),

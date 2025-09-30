@@ -24,6 +24,7 @@ else:
 
 try:
     import lmb_engine
+    print(f"Imported lmb_engine from: {lmb_engine.__file__}")
 except ImportError:
     print("FATAL ERROR: Could not import the 'lmb_engine' module.")
     print(f"Ensure the compiled C++ module (.pyd file) is in one of these paths:")
@@ -39,38 +40,21 @@ def create_initial_track(num_particles=200):
     Helper function to create a single C++ Track object for testing.
     This track will have a cloud of particles representing its state.
     """
-    # Instantiate the C++ Track class
-    track = lmb_engine.Track()
-    track.existence_probability = 0.99
-    
+    # Create track label
+    label = lmb_engine.TrackLabel()
+    label.birth_time = 0
+    label.index = 1
     particles = []
     for _ in range(num_particles):
-        # Instantiate the C++ Particle class
         p = lmb_engine.Particle()
-        
-        # Define the initial state parameters
-        # State vector format: [x, y, z, vx, vy, vz, bc]
-        
-        # Start at origin [0,0,0] but add some random noise
-        # to create a "cloud" of initial positions.
-        start_pos = np.random.randn(3) * 2.0  # Gaussian noise with stddev=2.0 meters
-
-        # All particles share the same initial velocity
-        start_vel = np.array([10.0, 5.0, 0.0]) # Moves at 10 m/s in x, 5 m/s in y
-        
-        # Ballistic coefficient (not used by linear model, but required for state vector)
+        start_pos = np.random.randn(3) * 2.0
+        start_vel = np.array([10.0, 5.0, 0.0])
         bc = 0.01
-
-        # Combine into the 7-element state vector
         p.state_vector = np.concatenate([start_pos, start_vel, [bc]])
-        
-        # All particles have equal weight
         p.weight = 1.0 / num_particles
         particles.append(p)
-    
-    # Assign the list of C++ Particle objects to the C++ Track object
-    # pybind11 handles the conversion automatically
-    track.particles = particles
+    # Use correct Track constructor
+    track = lmb_engine.Track(label, 0.99, particles)
     return track
 
 def plot_particles(ax, tracks, color, label):
@@ -105,17 +89,11 @@ def main():
     # Define a dummy covariance matrix for the birth model constructor
     # Variances: 10m pos, 5m/s vel, 0.1 bc
     initial_cov = np.diag([10.0**2, 10.0**2, 10.0**2, 5.0**2, 5.0**2, 5.0**2, 0.1**2])
-    birth_model = lmb_engine.AdaptiveBirthModel(
-        particles_per_track=100,
-        initial_existence_probability=0.05,
-        initial_covariance=initial_cov
-    )
+    birth_model = lmb_engine.AdaptiveBirthModel(100, 0.05, initial_cov)
 
     # 2. Instantiate the main C++ tracker engine
     print("Step 2: Instantiating C++ SMC_LMB_Tracker...")
-    tracker = lmb_engine.SMC_LMB_Tracker(
-        propagator, sensor_model, birth_model, survival_probability=0.99
-    )
+    tracker = lmb_engine.create_smc_lmb_tracker(0.99)
 
     # 3. Create initial state and set it in the tracker
     print("Step 3: Creating initial track and setting state in C++ engine...")
