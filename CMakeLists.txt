@@ -20,6 +20,7 @@ pybind11_add_module(lmb_engine
     src/simple_sensor_model.cpp
     src/adaptive_birth_model.cpp
     src/smc_lmb_tracker.cpp
+    src/sgp4_propagator.cpp
 )
 
 # --- Minimal Test Python Module Target ---
@@ -38,9 +39,13 @@ set_target_properties(minimal_linear_propagator PROPERTIES
 
 # --- Include Directories ---
 target_include_directories(lmb_engine PUBLIC src)
+target_include_directories(lmb_engine PRIVATE external/sgp4/libsgp4)
 
 # --- Link Libraries ---
-target_link_libraries(lmb_engine PRIVATE Eigen3::Eigen)
+target_link_libraries(lmb_engine PRIVATE Eigen3::Eigen sgp4)
+
+# --- Add SGP4 Library ---
+add_subdirectory(external/sgp4)
 
 # --- Set Output Directory for Python Package ---
 set_target_properties(lmb_engine PROPERTIES

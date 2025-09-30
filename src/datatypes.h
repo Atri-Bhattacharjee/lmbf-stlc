@@ -36,8 +36,11 @@ struct Particle {
     //! [x, y, z, vx, vy, vz, bc] where position is ECI in km, velocity is ECI in km/s, and bc is the ballistic coefficient in m²/kg
     Eigen::VectorXd state_vector;
     double weight;  //!< The probability weight of this particle
+    std::string tle_line1; // SGP4 TLE line 1
+    std::string tle_line2; // SGP4 TLE line 2
+    Eigen::VectorXd cartesian_state_vector; // SGP4 propagated state [x, y, z, vx, vy, vz]
 
-    Particle() : state_vector(7), weight(0.0) {}
+    Particle() : state_vector(7), weight(0.0), tle_line1(), tle_line2(), cartesian_state_vector(6) {}
 };
 
 /**

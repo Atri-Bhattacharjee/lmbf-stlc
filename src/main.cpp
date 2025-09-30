@@ -8,6 +8,7 @@
 #include "simple_sensor_model.h"
 #include "adaptive_birth_model.h"
 #include "smc_lmb_tracker.h"
+#include "sgp4_propagator.h"
 
 PYBIND11_MODULE(lmb_engine, m) {
     m.doc() = "High-performance C++ engine for SMC-LMB space debris tracking";
@@ -20,7 +21,9 @@ PYBIND11_MODULE(lmb_engine, m) {
     
     pybind11::class_<Particle>(m, "Particle")
         .def(pybind11::init<>())
-        .def_readwrite("state_vector", &Particle::state_vector)
+        .def_readwrite("tle_line1", &Particle::tle_line1)
+        .def_readwrite("tle_line2", &Particle::tle_line2)
+        .def_readwrite("cartesian_state_vector", &Particle::cartesian_state_vector)
         .def_readwrite("weight", &Particle::weight);
     
     pybind11::class_<Measurement>(m, "Measurement")
@@ -68,6 +71,10 @@ PYBIND11_MODULE(lmb_engine, m) {
              pybind11::arg("initial_covariance"),
              "Constructor for AdaptiveBirthModel")
         .def("generate_new_tracks", &AdaptiveBirthModel::generate_new_tracks);
+    
+    pybind11::class_<SGP4Propagator, IOrbitPropagator, std::shared_ptr<SGP4Propagator>>(m, "SGP4Propagator")
+        .def(pybind11::init<const Eigen::MatrixXd&>(), pybind11::arg("process_noise_covariance"))
+        .def("propagate", &SGP4Propagator::propagate);
     
     // Bind the main tracker class with direct constructor support
     pybind11::class_<SMC_LMB_Tracker, std::shared_ptr<SMC_LMB_Tracker>>(m, "SMC_LMB_Tracker")
