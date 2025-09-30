@@ -75,7 +75,7 @@ def plot_particles(ax, tracks, color, label):
         return # Do nothing if there are no tracks
 
     for track in tracks:
-        for p in track.particles:
+        for p in track.particles():
             # Extract x (index 0) and y (index 1) from the state vector
             all_x.append(p.state_vector[0])
             all_y.append(p.state_vector[1])
@@ -109,7 +109,7 @@ def main():
 
     # 4. Get the "before" state for plotting
     tracks_before = tracker.get_tracks()
-    print(f"State Before: {len(tracks_before)} track(s), {len(tracks_before[0].particles)} particles.")
+    print(f"State Before: {len(tracks_before)} track(s), {len(tracks_before[0].particles())} particles.")
 
     # 5. --- RUN THE PREDICT STEP ---
     dt = 1.0  # Simulate a time step of 1.0 second
@@ -118,7 +118,7 @@ def main():
 
     # 6. Get the "after" state for plotting
     tracks_after = tracker.get_tracks()
-    print(f"State After: {len(tracks_after)} track(s), {len(tracks_after[0].particles)} particles.")
+    print(f"State After: {len(tracks_after)} track(s), {len(tracks_after[0].particles())} particles.")
 
     # 7. Visualize the results
     print("Step 7: Plotting results...")
@@ -128,8 +128,8 @@ def main():
     plot_particles(ax, tracks_after, 'red', 'State After Predict')
     
     # Calculate and plot the mean position for clarity
-    mean_before = np.mean([p.state_vector[:2] for p in tracks_before[0].particles], axis=0)
-    mean_after = np.mean([p.state_vector[:2] for p in tracks_after[0].particles], axis=0)
+    mean_before = np.mean([p.state_vector[:2] for p in tracks_before[0].particles()], axis=0)
+    mean_after = np.mean([p.state_vector[:2] for p in tracks_after[0].particles()], axis=0)
     ax.scatter(mean_before[0], mean_before[1], s=100, color='cyan', edgecolors='black', label='Mean Before')
     ax.scatter(mean_after[0], mean_after[1], s=100, color='magenta', edgecolors='black', label='Mean After')
     
