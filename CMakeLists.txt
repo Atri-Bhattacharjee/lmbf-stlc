@@ -10,7 +10,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # --- Project Dependencies ---
 find_package(Eigen3 REQUIRED)
-find_package(pybind11 REQUIRED)
+set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH};${CMAKE_SOURCE_DIR}/external/vcpkg/installed/x64-windows/share/pybind11")
+find_package(pybind11 CONFIG REQUIRED)
 
 # --- Python Module Target ---
 # Create the Python module target named 'lmb_engine' that will be importable in Python
