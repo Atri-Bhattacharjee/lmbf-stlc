@@ -9,6 +9,12 @@ import os
 # Add the build directory to the Python path to find the lmb_engine module.
 # This is a more robust way than manually copying the .pyd file.
 # It assumes you are running this script from the project's root directory.
+
+# Add the python/lmb_engine/Debug directory to sys.path if it exists
+engine_debug_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'python', 'lmb_engine', 'Debug'))
+if os.path.isdir(engine_debug_dir):
+    sys.path.append(engine_debug_dir)
+
 build_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'build'))
 # On Windows, the output can be in a 'Debug' or 'Release' subfolder
 debug_build_dir = os.path.join(build_dir, 'Debug')
@@ -28,6 +34,7 @@ try:
 except ImportError:
     print("FATAL ERROR: Could not import the 'lmb_engine' module.")
     print(f"Ensure the compiled C++ module (.pyd file) is in one of these paths:")
+    print(f"  - {engine_debug_dir}")
     print(f"  - {debug_build_dir}")
     print(f"  - {release_build_dir}")
     print(f"  - {build_dir}")
