@@ -1,6 +1,7 @@
 #include "adaptive_birth_model.h"
 #include <random>
 #include <vector>
+#include <iostream> // Include iostream for debug prints
 
 AdaptiveBirthModel::AdaptiveBirthModel(int particles_per_track, 
                                      double initial_existence_probability, 
@@ -10,8 +11,7 @@ AdaptiveBirthModel::AdaptiveBirthModel(int particles_per_track,
       initial_covariance_(initial_covariance) {
 }
 
-std::vector<Track> AdaptiveBirthModel::generate_new_tracks(const std::vector<Measurement>& unused_measurements, 
-                                                          double current_time) const {
+std::vector<Track> AdaptiveBirthModel::generate_new_tracks(const std::vector<Measurement>& unused_measurements, double current_time) const {
     // Initialize empty vector for new tracks
     std::vector<Track> new_tracks;
     
@@ -41,8 +41,7 @@ std::vector<Track> AdaptiveBirthModel::generate_new_tracks(const std::vector<Mea
         // Define the mean state vector
         // Position part (first 3 elements) should be the measurement value
         // Velocity and other elements should be zero
-        Eigen::VectorXd mean_state = Eigen::VectorXd::Zero(7);
-        mean_state.head<3>() = measurement.value_;
+        Eigen::VectorXd mean_state = measurement.value_;
         
         // Generate particles
         for (int particle_idx = 0; particle_idx < particles_per_track_; ++particle_idx) {
@@ -56,7 +55,9 @@ std::vector<Track> AdaptiveBirthModel::generate_new_tracks(const std::vector<Mea
             
             // Create the final sampled state vector using Cholesky decomposition
             // sampled_state = mean_state + L * standard_normal_vector
-            Eigen::VectorXd sampled_state = mean_state + L * standard_normal_vector;
+            Eigen::VectorXd sampled_state = Eigen::VectorXd::Zero(7);
+            sampled_state.head(6) = mean_state + L.topLeftCorner(6,6) * standard_normal_vector.head(6);
+            sampled_state(6) = 0.0; // Ballistic coefficient
             
             // Assign the sampled state to the particle's state vector
             particle.state_vector = sampled_state;

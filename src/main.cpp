@@ -9,6 +9,9 @@
 #include "adaptive_birth_model.h"
 #include "smc_lmb_tracker.h"
 #include "sgp4_propagator.h"
+#include "in_orbit_sensor_model.h"
+#include "assignment.h"
+#include "metrics.h"
 
 PYBIND11_MODULE(lmb_engine, m) {
     m.doc() = "High-performance C++ engine for SMC-LMB space debris tracking";
@@ -21,9 +24,7 @@ PYBIND11_MODULE(lmb_engine, m) {
     
     pybind11::class_<Particle>(m, "Particle")
         .def(pybind11::init<>())
-        .def_readwrite("tle_line1", &Particle::tle_line1)
-        .def_readwrite("tle_line2", &Particle::tle_line2)
-        .def_readwrite("cartesian_state_vector", &Particle::cartesian_state_vector)
+        .def_readwrite("state_vector", &Particle::state_vector)
         .def_readwrite("weight", &Particle::weight);
     
     pybind11::class_<Measurement>(m, "Measurement")
@@ -31,7 +32,8 @@ PYBIND11_MODULE(lmb_engine, m) {
         .def_readwrite("timestamp_", &Measurement::timestamp_)
         .def_readwrite("value_", &Measurement::value_)
         .def_readwrite("covariance_", &Measurement::covariance_)
-        .def_readwrite("sensor_id_", &Measurement::sensor_id_);
+        .def_readwrite("sensor_id_", &Measurement::sensor_id_)
+        .def_readwrite("sensor_state_", &Measurement::sensor_state_);
     
     pybind11::class_<Track>(m, "Track")
         .def(pybind11::init<>())
@@ -76,6 +78,10 @@ PYBIND11_MODULE(lmb_engine, m) {
         .def(pybind11::init<const Eigen::MatrixXd&>(), pybind11::arg("process_noise_covariance"))
         .def("propagate", &SGP4Propagator::propagate);
     
+    pybind11::class_<InOrbitSensorModel, ISensorModel, std::shared_ptr<InOrbitSensorModel>>(m, "InOrbitSensorModel")
+        .def(pybind11::init<>(), "Default constructor for InOrbitSensorModel")
+        .def("calculate_likelihood", &InOrbitSensorModel::calculate_likelihood);
+    
     // Bind the main tracker class with direct constructor support
     pybind11::class_<SMC_LMB_Tracker, std::shared_ptr<SMC_LMB_Tracker>>(m, "SMC_LMB_Tracker")
         .def(pybind11::init<>(), "Default constructor for SMC_LMB_Tracker")
@@ -88,8 +94,26 @@ PYBIND11_MODULE(lmb_engine, m) {
         .def("predict", &SMC_LMB_Tracker::predict, "Runs the predict step for a given time delta")
         .def("update", &SMC_LMB_Tracker::update, "Runs the update step with measurements")
         .def("get_tracks", &SMC_LMB_Tracker::get_tracks, "Gets the current list of tracks", pybind11::return_value_policy::reference_internal)
-        .def("set_tracks", &SMC_LMB_Tracker::set_tracks, "Sets the initial list of tracks for the filter");
+        .def("set_tracks", &SMC_LMB_Tracker::set_tracks, "Sets the initial list of tracks for the filter")
+        .def("compute_association_likelihood", &SMC_LMB_Tracker::compute_association_likelihood, "Compute the association likelihood for a track and measurement");
     
+    // Bind the Hypothesis struct
+    pybind11::class_<Hypothesis>(m, "Hypothesis")
+        .def(pybind11::init<>())
+        .def_readwrite("associations", &Hypothesis::associations)
+        .def_readwrite("weight", &Hypothesis::weight);
+
+    // Bind the solve_assignment function
+    m.def("solve_assignment", &solve_assignment, pybind11::arg("cost_matrix"), pybind11::arg("k_best"),
+          "Solves the assignment problem and returns K-best hypotheses.");
+
+    // Bind the calculate_ospa_distance function
+    m.def("calculate_ospa_distance", &calculate_ospa_distance,
+          "Calculates the OSPA distance between estimated tracks and ground truths",
+          pybind11::arg("tracks"),
+          pybind11::arg("ground_truths"),
+          pybind11::arg("cutoff"));
+
     // Factory functions for convenience (optional - can remove if not needed)
     m.def("create_smc_lmb_tracker", [](double survival_probability) {
         auto propagator = std::make_shared<LinearPropagator>();

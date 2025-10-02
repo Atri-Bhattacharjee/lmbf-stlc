@@ -13,6 +13,7 @@
 #include <memory>
 #include "datatypes.h"
 #include "models.h"
+#include "assignment.h"
 
 /**
  * @brief Sequential Monte Carlo Labeled Multi-Bernoulli Tracker
@@ -29,18 +30,6 @@ private:
     std::shared_ptr<ISensorModel> sensor_model_;       //!< Shared pointer to the sensor model
     std::shared_ptr<IBirthModel> birth_model_;         //!< Shared pointer to the birth model
     double survival_probability_;                       //!< Configuration parameter for track survival probability
-
-    // A struct to hold a single data association hypothesis
-    struct Hypothesis {
-        // Index `i` of the vector corresponds to track `i`.
-        // The value at that index is the measurement index it's associated with.
-        // A value of -1 indicates a missed detection for that track.
-        std::vector<int> associations;
-        double weight;
-    };
-
-    // Helper to compute the likelihood of a track-measurement pair by averaging over its particles.
-    double compute_association_likelihood(const Track& track, const Measurement& measurement) const;
 
     // Helper to generate all possible hypotheses via recursion (brute-force).
     void generate_hypotheses_recursive(
@@ -109,4 +98,7 @@ public:
      * @param tracks Vector of tracks to set as the current filter state
      */
     void set_tracks(const std::vector<Track>& tracks);
+
+    // Helper to compute the likelihood of a track-measurement pair by averaging over its particles.
+    double compute_association_likelihood(const Track& track, const Measurement& measurement) const;
 };

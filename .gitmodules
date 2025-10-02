@@ -4,3 +4,6 @@
 [submodule "external/sgp4"]
 	path = external/sgp4
 	url = https://github.com/dnwrnr/sgp4.git
+[submodule "external/astro"]
+	path = external/astro
+	url = https://github.com/openastro/astro.git

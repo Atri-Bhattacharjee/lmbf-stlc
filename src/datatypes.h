@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <string>
 #include <Eigen/Dense>
+#include <iostream>
 
 /**
  * @brief A simple POD structure for creating unique, persistent track identities
@@ -36,11 +37,14 @@ struct Particle {
     //! [x, y, z, vx, vy, vz, bc] where position is ECI in km, velocity is ECI in km/s, and bc is the ballistic coefficient in m²/kg
     Eigen::VectorXd state_vector;
     double weight;  //!< The probability weight of this particle
-    std::string tle_line1; // SGP4 TLE line 1
-    std::string tle_line2; // SGP4 TLE line 2
-    Eigen::VectorXd cartesian_state_vector; // SGP4 propagated state [x, y, z, vx, vy, vz]
 
-    Particle() : state_vector(7), weight(0.0), tle_line1(), tle_line2(), cartesian_state_vector(6) {}
+    Particle() : state_vector(7), weight(0.0) {
+        for (int i = 0; i < 6; ++i) {
+            if (!std::isfinite(state_vector[i])) {
+                std::cerr << "[Particle] Non-finite value in state_vector at construction!" << std::endl;
+            }
+        }
+    }
 };
 
 /**
@@ -114,9 +118,10 @@ struct Measurement {
     Eigen::VectorXd value_;              //!< The measurement vector
     Eigen::MatrixXd covariance_;         //!< The 3x3 measurement noise covariance matrix
     std::string sensor_id_;              //!< Identifier for the sensor that produced the measurement
+    Eigen::VectorXd sensor_state_;           //!< The 6D ECI state of the sensor satellite
 
     Measurement()
-        : timestamp_(0.0), value_(Eigen::VectorXd::Zero(3)), covariance_(Eigen::MatrixXd::Zero(3,3)), sensor_id_{} {}
+        : timestamp_(0.0), value_(Eigen::VectorXd::Zero(6)), covariance_(Eigen::MatrixXd::Zero(6,6)), sensor_id_(), sensor_state_(Eigen::VectorXd::Zero(7)) {}
 };
 
 /**

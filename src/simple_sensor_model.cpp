@@ -1,24 +1,45 @@
 #include "simple_sensor_model.h"
 #include <cmath>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
+// --- BEGIN DEFINITIVE REPLACEMENT ---
 double SimpleSensorModel::calculate_likelihood(const Particle& particle, const Measurement& measurement) const {
-    // Extract the 3D position vector from the particle's state (first 3 elements)
-    Eigen::Vector3d particle_position = particle.state_vector.head<3>();
+    const Eigen::VectorXd& state = particle.state_vector;
+    const Eigen::VectorXd& meas = measurement.value_;
+    const Eigen::MatrixXd& cov = measurement.covariance_;
+
+    // 1. Verify Input Sizes
+    if (state.size() < 6 || meas.size() < 6 || cov.rows() < 6 || cov.cols() < 6) {
+        return 0.0;
+    }
+
+    // 2. Extract 6D Subvectors
+    Eigen::VectorXd state_6d = state.head(6);
+    Eigen::VectorXd meas_6d = meas.head(6);
+    Eigen::MatrixXd cov_6d = cov.topLeftCorner(6, 6);
+
+    // 3. Calculate Residual
+    Eigen::VectorXd residual = meas_6d - state_6d;
+
+    // 4. Calculate Inverse Covariance
+    Eigen::MatrixXd cov_inv = cov_6d.inverse();
     
-    // The measurement.value_ is assumed to be a 3D Cartesian position vector
-    // Calculate the residual (difference between measurement and particle position)
-    Eigen::Vector3d residual = measurement.value_.head<3>() - particle_position;
+    // 5. Calculate Mahalanobis Distance Squared
+    double maha_sq = residual.transpose() * cov_inv * residual;
+
+    // 6. Calculate Exponential Term
+    double exp_val = std::exp(-0.5 * maha_sq);
+
+    // 7. Calculate Normalization Factor (for completeness, though not strictly needed)
+    const double PI = 3.14159265358979323846;
+    double norm_factor = std::pow(2.0 * PI, -3.0) * std::pow(cov_6d.determinant(), -0.5);
     
-    // Calculate the Mahalanobis distance squared
-    // For this simple test model, we assume a diagonal covariance
-    // Get the inverse of the measurement covariance matrix
-    Eigen::Matrix3d covariance_inv = measurement.covariance_.inverse();
-    
-    // Calculate the Mahalanobis distance squared
-    double mahalanobis_sq = residual.transpose() * covariance_inv * residual;
-    
-    // Calculate the final likelihood score using the formula for a multivariate Gaussian PDF
-    // We ignore the normalization constant (which is not needed for the filter's relative weighting)
-    // The formula is exp(-0.5 * mahalanobis_sq)
-    return std::exp(-0.5 * mahalanobis_sq);
+    double final_likelihood = norm_factor * exp_val;
+
+    // Add the floor just in case, though the issue is upstream
+    const double likelihood_floor = 1e-12;
+    return std::max(final_likelihood, likelihood_floor);
 }
+// --- END DEFINITIVE REPLACEMENT ---

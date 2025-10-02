@@ -1,4 +1,5 @@
 #include "smc_lmb_tracker.h"
+#include "assignment.h"
 
 SMC_LMB_Tracker::SMC_LMB_Tracker(std::shared_ptr<IOrbitPropagator> propagator,
                                  std::shared_ptr<ISensorModel> sensor_model,
@@ -40,155 +41,144 @@ void SMC_LMB_Tracker::predict(double dt) {
 }
 
 void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
-    // Get current tracks
     std::vector<Track> tracks = current_state_.tracks();
     size_t num_tracks = tracks.size();
     size_t num_meas = measurements.size();
     if (num_tracks == 0) {
-        // No tracks: call birth model on all measurements
         std::vector<Track> born_tracks = birth_model_->generate_new_tracks(measurements, current_state_.timestamp());
         set_tracks(born_tracks);
         return;
     }
-
-    // Generate all possible hypotheses
-    std::vector<Hypothesis> hypotheses;
-    std::vector<int> current_association(num_tracks, -1);
-    std::vector<bool> meas_is_used(num_meas, false);
-    generate_hypotheses_recursive(0, current_association, meas_is_used, tracks, measurements, hypotheses);
-
-    // Normalize hypothesis weights
-    double total_weight = 0.0;
-    for (const auto& h : hypotheses) total_weight += h.weight;
-    if (total_weight > 0.0) {
-        for (auto& h : hypotheses) h.weight /= total_weight;
+    // 1. Build cost matrix (tracks x (measurements + 1))
+    Eigen::MatrixXd cost_matrix(num_tracks, num_meas + 1);
+    for (size_t i = 0; i < num_tracks; ++i) {
+        for (size_t j = 0; j < num_meas; ++j) {
+            double likelihood = compute_association_likelihood(tracks[i], measurements[j]);
+            cost_matrix(i, j) = -std::log(std::max(likelihood, 1e-12));
+        }
+        cost_matrix(i, num_meas) = -std::log(std::max(1.0 - tracks[i].existence_probability(), 1e-12));
     }
-
-    // LMB moment-matching update
+    // 2. Solve assignment (K-best)
+    std::vector<Hypothesis> hypotheses = solve_assignment(cost_matrix, 100);
+    // 3. Normalize weights (log-sum-exp)
+    std::vector<double> log_weights;
+    for (const auto& h : hypotheses) log_weights.push_back(-h.weight);
+    double max_logw = *std::max_element(log_weights.begin(), log_weights.end());
+    std::vector<double> norm_weights;
+    double sum_exp = 0.0;
+    for (double lw : log_weights) sum_exp += std::exp(lw - max_logw);
+    for (double lw : log_weights) norm_weights.push_back(std::exp(lw - max_logw) / sum_exp);
+    // 4. Final LMB Update
     std::vector<Track> updated_tracks;
-    for (size_t t = 0; t < num_tracks; ++t) {
-        // New existence probability: sum of weights for hypotheses where track t is detected
-        double new_ex_prob = 0.0;
-        for (const auto& h : hypotheses) {
-            if (h.associations[t] != -1) new_ex_prob += h.weight;
-        }
-        // New particles: weighted mixture over all hypotheses
-        std::vector<Particle> new_particles;
-        const auto& old_particles = tracks[t].particles();
-        for (size_t p = 0; p < old_particles.size(); ++p) {
-            Particle updated_p = old_particles[p];
-            double w_sum = 0.0;
-            for (const auto& h : hypotheses) {
-                double w = h.weight;
-                if (h.associations[t] != -1) {
-                    // Associated: multiply by likelihood
-                    w *= compute_association_likelihood(tracks[t], measurements[h.associations[t]]);
-                } else {
-                    // Missed detection: use survival probability only
-                    w *= tracks[t].existence_probability();
-                }
-                w_sum += w;
+    for (size_t track_idx = 0; track_idx < num_tracks; ++track_idx) {
+        const auto& current_particles = tracks[track_idx].particles();
+        size_t num_particles = current_particles.size();
+        double miss_detection_sum = 0.0;
+        std::vector<double> measurement_association_sums(num_meas, 0.0);
+        std::vector<std::vector<double>> measurement_particle_likelihoods(num_meas, std::vector<double>(num_particles));
+        for (size_t m = 0; m < num_meas; ++m) {
+            for (size_t p = 0; p < num_particles; ++p) {
+                measurement_particle_likelihoods[m][p] = sensor_model_->calculate_likelihood(current_particles[p], measurements[m]);
             }
-            updated_p.weight = w_sum;
-            new_particles.push_back(updated_p);
         }
-        // Normalize particle weights
-        double norm = 0.0;
-        for (const auto& p : new_particles) norm += p.weight;
-        if (norm > 0.0) {
-            for (auto& p : new_particles) p.weight /= norm;
+        for (size_t h = 0; h < hypotheses.size(); ++h) {
+            int assoc_meas_idx = hypotheses[h].associations[track_idx];
+            if (assoc_meas_idx >= num_meas) {
+                miss_detection_sum += norm_weights[h];
+            } else {
+                measurement_association_sums[assoc_meas_idx] += norm_weights[h];
+            }
         }
+        double miss_term = miss_detection_sum * tracks[track_idx].existence_probability();
+        double new_existence_probability = miss_term;
+        std::vector<double> final_particle_weights(num_particles, 0.0);
+        for (size_t p = 0; p < num_particles; ++p) {
+            final_particle_weights[p] = miss_term * current_particles[p].weight;
+        }
+        for (size_t m = 0; m < num_meas; ++m) {
+            if (measurement_association_sums[m] > 0.0) {
+                double assoc_term = measurement_association_sums[m] * (1.0 - tracks[track_idx].existence_probability());
+                new_existence_probability += assoc_term;
+                for (size_t p = 0; p < num_particles; ++p) {
+                    double particle_likelihood = measurement_particle_likelihoods[m][p];
+                    double increment = assoc_term * current_particles[p].weight * particle_likelihood;
+                    final_particle_weights[p] += increment;
+                }
+            }
+        }
+        assert(final_particle_weights.size() == current_particles.size());
+        std::vector<Particle> updated_particles = current_particles;
+        double total_weight = 0.0;
+        for (size_t p = 0; p < num_particles; ++p) {
+            total_weight += final_particle_weights[p];
+        }
+        if (total_weight > 1e-12) {
+            for (size_t p = 0; p < num_particles; ++p) {
+                updated_particles[p].weight = final_particle_weights[p] / total_weight;
+            }
+        } else {
+            for (size_t p = 0; p < num_particles; ++p) {
+                updated_particles[p].weight = 1.0 / num_particles;
+            }
+        }
+        double sum_weights = 0.0;
         // Systematic resampling
-        std::vector<Particle> resampled;
-        size_t N = new_particles.size();
-        double u = ((double)rand() / RAND_MAX) / N;
+        std::vector<Particle> resampled_particles;
+        double u = ((double)rand() / RAND_MAX) / num_particles;
         double cumsum = 0.0;
         size_t idx = 0;
-        for (size_t i = 0; i < N; ++i) {
-            double threshold = u + (double)i / N;
-            while (cumsum < threshold && idx < N) {
-                cumsum += new_particles[idx].weight;
+        for (size_t i = 0; i < num_particles; ++i) {
+            double threshold = u + (double)i / num_particles;
+            while (cumsum < threshold && idx < num_particles) {
+                cumsum += updated_particles[idx].weight;
                 ++idx;
             }
-            if (idx > 0) resampled.push_back(new_particles[idx-1]);
-            else resampled.push_back(new_particles[0]);
+            Particle resampled = (idx > 0) ? updated_particles[idx-1] : updated_particles[0];
+            resampled.weight = 1.0 / num_particles;
+            resampled_particles.push_back(resampled);
         }
-        Track updated_track = tracks[t];
-        updated_track.set_existence_probability(new_ex_prob);
-        updated_track.set_particles(resampled);
-        updated_tracks.push_back(updated_track);
+        Track final_track = tracks[track_idx];
+        final_track.set_existence_probability(new_existence_probability);
+        final_track.set_particles(resampled_particles);
+        updated_tracks.push_back(final_track);
     }
-
-    // Find unused measurements from the highest-weight hypothesis
-    auto best_hyp = std::max_element(hypotheses.begin(), hypotheses.end(), [](const Hypothesis& a, const Hypothesis& b) { return a.weight < b.weight; });
+    // 5. Find unused measurements from best hypothesis
+    auto best_hyp = std::max_element(norm_weights.begin(), norm_weights.end()) - norm_weights.begin();
     std::vector<bool> used_meas(num_meas, false);
-    if (best_hyp != hypotheses.end()) {
-        for (int assoc : best_hyp->associations) {
-            if (assoc != -1) used_meas[assoc] = true;
-        }
+    for (int assoc : hypotheses[best_hyp].associations) {
+        if (assoc != num_meas) used_meas[assoc] = true;
     }
     std::vector<Measurement> unused_meas;
     for (size_t m = 0; m < num_meas; ++m) {
         if (!used_meas[m]) unused_meas.push_back(measurements[m]);
     }
     std::vector<Track> born_tracks = birth_model_->generate_new_tracks(unused_meas, current_state_.timestamp());
-
-    // Combine updated and born tracks
+    // 6. Combine updated and born tracks
     updated_tracks.insert(updated_tracks.end(), born_tracks.begin(), born_tracks.end());
-    set_tracks(updated_tracks);
+    // Track pruning: remove tracks with low existence probability
+    const double prune_threshold = 0.01; // configurable
+    std::vector<Track> pruned_tracks;
+    for (const auto& track : updated_tracks) {
+        if (track.existence_probability() >= prune_threshold) {
+            pruned_tracks.push_back(track);
+        }
+    }
+
+    set_tracks(pruned_tracks);
 }
 
 // Helper: average likelihood over all particles
 
 double SMC_LMB_Tracker::compute_association_likelihood(const Track& track, const Measurement& measurement) const {
-    double likelihood = 0.0;
+    double total_likelihood = 0.0;
     const auto& particles = track.particles();
-    for (const auto& p : particles) {
-        likelihood += sensor_model_->calculate_likelihood(p, measurement) * p.weight;
+    for (size_t i = 0; i < particles.size(); ++i) {
+        const auto& p = particles[i];
+        double particle_likelihood = sensor_model_->calculate_likelihood(p, measurement);
+        double weighted_likelihood = particle_likelihood * p.weight;
+        total_likelihood += weighted_likelihood;
     }
-    return likelihood;
-}
-
-// Helper: recursively generate all hypotheses
-void SMC_LMB_Tracker::generate_hypotheses_recursive(
-    int track_idx,
-    std::vector<int>& current_association,
-    std::vector<bool>& meas_is_used,
-    const std::vector<Track>& tracks,
-    const std::vector<Measurement>& measurements,
-    std::vector<Hypothesis>& out_hypotheses) const {
-    size_t num_tracks = tracks.size();
-    size_t num_meas = measurements.size();
-    if (track_idx == num_tracks) {
-        // Base case: all tracks assigned
-        double weight = 1.0;
-        for (size_t t = 0; t < num_tracks; ++t) {
-            if (current_association[t] == -1) {
-                // Missed detection
-                weight *= tracks[t].existence_probability();
-            } else {
-                // Associated
-                weight *= compute_association_likelihood(tracks[t], measurements[current_association[t]]);
-            }
-        }
-        Hypothesis h;
-        h.associations = current_association;
-        h.weight = weight;
-        out_hypotheses.push_back(h);
-        return;
-    }
-    // Missed detection case
-    current_association[track_idx] = -1;
-    generate_hypotheses_recursive(track_idx + 1, current_association, meas_is_used, tracks, measurements, out_hypotheses);
-    // Try all unused measurements
-    for (size_t m = 0; m < num_meas; ++m) {
-        if (!meas_is_used[m]) {
-            current_association[track_idx] = (int)m;
-            meas_is_used[m] = true;
-            generate_hypotheses_recursive(track_idx + 1, current_association, meas_is_used, tracks, measurements, out_hypotheses);
-            meas_is_used[m] = false; // backtrack
-        }
-    }
+    return total_likelihood;
 }
 
 const std::vector<Track>& SMC_LMB_Tracker::get_tracks() const {
