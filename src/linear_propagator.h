@@ -29,14 +29,9 @@ public:
 
     /**
      * @brief Propagate a particle's state forward in time using linear motion
-     * 
-     * This method propagates the particle state forward by simply updating the
-     * position based on the current velocity: new_pos = old_pos + velocity * dt
-     * The velocity and ballistic coefficient remain unchanged.
-     * 
-     * @param particle The input particle with current state [x, y, z, vx, vy, vz, bc]
      * @param dt The time step in seconds to propagate forward
+     * @param current_time The current simulation timestamp (unused)
      * @return Particle The propagated particle with updated state
      */
-    Particle propagate(const Particle& particle, double dt) const override;
+    Particle propagate(const Particle& particle, double dt, double current_time) const override;
 };

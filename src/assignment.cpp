@@ -1,87 +1,229 @@
 #include "assignment.h"
+#include "munkres.h"
+#include "matrix.h"
 #include <queue>
 #include <limits>
 #include <algorithm>
+#include <vector>
+#include <map>
+#include <set>
 
-// --- Jonker-Volgenant Algorithm for Linear Assignment ---
-// Reference: https://github.com/berndporr/CPP-Munkres/blob/master/Munkres.cpp (adapted)
-namespace {
-std::pair<std::vector<int>, double> jonker_volgenant(const Eigen::MatrixXd& cost) {
-    int n = cost.rows();
-    int m = cost.cols();
-    int dim = std::max(n, m);
-    Eigen::MatrixXd padded = Eigen::MatrixXd::Constant(dim, dim, cost.maxCoeff() + 1.0);
-    padded.block(0, 0, n, m) = cost;
-    std::vector<double> u(dim, 0.0), v(dim, 0.0);
-    std::vector<int> ind_rows(dim, -1), ind_cols(dim, -1);
-    for (int i = 0; i < dim; ++i) {
-        u[i] = padded.row(i).minCoeff();
+// Candidate structure for Murty's algorithm priority queue
+struct Candidate {
+    double cost;
+    std::vector<int> assignment;
+    std::map<int, int> enforced_assignments;  // row -> col mappings that must be preserved
+    std::set<std::pair<int, int>> forbidden_assignments;  // (row, col) pairs that cannot be selected
+    
+    // Constructor
+    Candidate(double c, const std::vector<int>& assn) 
+        : cost(c), assignment(assn) {}
+    
+    Candidate(double c, const std::vector<int>& assn, 
+              const std::map<int, int>& enforced, 
+              const std::set<std::pair<int, int>>& forbidden)
+        : cost(c), assignment(assn), enforced_assignments(enforced), forbidden_assignments(forbidden) {}
+    
+    // For priority queue (min-heap based on cost)
+    bool operator>(const Candidate& other) const {
+        return cost > other.cost;
     }
-    for (int j = 0; j < dim; ++j) {
-        v[j] = (padded.col(j) - Eigen::VectorXd::Map(u.data(), dim)).minCoeff();
+};
+
+// Helper function: Munkres wrapper for single best assignment
+static std::pair<std::vector<int>, double> solve_lap_munkres(const Eigen::MatrixXd& cost_matrix) {
+    const int rows = cost_matrix.rows();
+    const int cols = cost_matrix.cols();
+    
+    // Handle empty matrix
+    if (rows == 0 || cols == 0) {
+        return {std::vector<int>(), 0.0};
     }
-    for (int i = 0; i < dim; ++i) {
-        for (int j = 0; j < dim; ++j) {
-            if (std::abs(padded(i, j) - u[i] - v[j]) < 1e-12 && ind_cols[j] == -1 && ind_rows[i] == -1) {
-                ind_rows[i] = j;
-                ind_cols[j] = i;
+    
+    // Create Munkres matrix and copy data
+    Matrix<double> munkres_matrix(rows, cols);
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            munkres_matrix(i, j) = cost_matrix(i, j);
+        }
+    }
+    
+    // Solve using Munkres algorithm
+    Munkres<double> solver;
+    solver.solve(munkres_matrix);
+    
+    // Extract assignment and calculate total cost
+    std::vector<int> assignment(rows, -1);
+    double total_cost = 0.0;
+    
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            if (munkres_matrix(i, j) == 0) {
+                assignment[i] = j;
+                total_cost += cost_matrix(i, j);
+                break;  // Only one assignment per row
             }
         }
     }
-    // If not all assigned, do augmenting path (simplified for brevity)
-    for (int i = 0; i < dim; ++i) {
-        if (ind_rows[i] == -1) {
-            for (int j = 0; j < dim; ++j) {
-                if (ind_cols[j] == -1) {
-                    ind_rows[i] = j;
-                    ind_cols[j] = i;
-                    break;
+    
+    return {assignment, total_cost};
+}
+
+// Helper function: Create constrained cost matrix
+static Eigen::MatrixXd create_constrained_matrix(const Eigen::MatrixXd& original_matrix,
+                                                const std::map<int, int>& enforced_assignments,
+                                                const std::set<std::pair<int, int>>& forbidden_assignments) {
+    const int rows = original_matrix.rows();
+    const int cols = original_matrix.cols();
+    
+    // Start with a copy of the original matrix
+    Eigen::MatrixXd constrained_matrix = original_matrix;
+    
+    // Set forbidden assignments to infinity
+    for (const auto& forbidden : forbidden_assignments) {
+        if (forbidden.first < rows && forbidden.second < cols) {
+            constrained_matrix(forbidden.first, forbidden.second) = std::numeric_limits<double>::infinity();
+        }
+    }
+    
+    // Handle enforced assignments by setting all other entries in those rows/columns to infinity
+    for (const auto& enforced : enforced_assignments) {
+        int row = enforced.first;
+        int col = enforced.second;
+        
+        if (row < rows && col < cols) {
+            // Set all other columns in this row to infinity
+            for (int j = 0; j < cols; ++j) {
+                if (j != col) {
+                    constrained_matrix(row, j) = std::numeric_limits<double>::infinity();
+                }
+            }
+            
+            // Set all other rows in this column to infinity
+            for (int i = 0; i < rows; ++i) {
+                if (i != row) {
+                    constrained_matrix(i, col) = std::numeric_limits<double>::infinity();
                 }
             }
         }
     }
-    std::vector<int> assignment(n, -1);
-    double total_cost = 0.0;
-    for (int i = 0; i < n; ++i) {
-        int j = ind_rows[i];
-        if (j >= 0 && j < m) {
-            assignment[i] = j;
-            total_cost += cost(i, j);
+    
+    return constrained_matrix;
+}
+
+// Helper function: Reconstruct full assignment from reduced assignment
+static std::vector<int> reconstruct_assignment(const std::vector<int>& reduced_assignment,
+                                              const std::vector<int>& row_mapping,
+                                              const std::vector<int>& col_mapping,
+                                              int original_rows) {
+    std::vector<int> full_assignment(original_rows, -1);
+    
+    for (int i = 0; i < reduced_assignment.size(); ++i) {
+        if (reduced_assignment[i] != -1) {
+            int original_row = row_mapping[i];
+            int original_col = col_mapping[reduced_assignment[i]];
+            full_assignment[original_row] = original_col;
         }
     }
-    return {assignment, total_cost};
+    
+    return full_assignment;
 }
 
-struct Candidate {
-    std::vector<int> associations;
-    double cost;
-    Eigen::MatrixXd cost_matrix;
-    bool operator<(const Candidate& other) const { return cost > other.cost; }
-};
-}
-
+// Main function: Solve K-best assignment problem using Murty's algorithm
 std::vector<Hypothesis> solve_assignment(const Eigen::MatrixXd& cost_matrix, int k_best) {
     std::vector<Hypothesis> results;
-    std::priority_queue<Candidate> queue;
-    // 1. Find best assignment
-    auto [best_assoc, best_cost] = jonker_volgenant(cost_matrix);
-    queue.push({best_assoc, best_cost, cost_matrix});
-    // 2. Murty's algorithm loop
-    while (!queue.empty() && (int)results.size() < k_best) {
-        Candidate cand = queue.top(); queue.pop();
-        results.push_back(Hypothesis(cand.associations, cand.cost));
-        // Partition: forbid each assignment in turn
-        for (int i = 0; i < (int)cand.associations.size(); ++i) {
-            int j = cand.associations[i];
-            if (j == -1 || j >= cand.cost_matrix.cols()) continue;
-            Eigen::MatrixXd new_cost = cand.cost_matrix;
-            new_cost(i, j) = std::numeric_limits<double>::infinity();
-            auto [assoc, cost] = jonker_volgenant(new_cost);
-            // Only add if assignment is valid (no -1) and cost is finite
-            if (std::all_of(assoc.begin(), assoc.end(), [](int x){return x != -1;}) && std::isfinite(cost)) {
-                queue.push({assoc, cost, new_cost});
+    
+    if (k_best <= 0 || cost_matrix.rows() == 0 || cost_matrix.cols() == 0) {
+        return results;
+    }
+    
+    // Priority queue for candidates (min-heap based on cost)
+    std::priority_queue<Candidate, std::vector<Candidate>, std::greater<Candidate>> candidates;
+    
+    // Step 1: Find the best (root) solution
+    auto root_solution = solve_lap_munkres(cost_matrix);
+    results.emplace_back(root_solution.first, root_solution.second);
+    
+    if (k_best == 1) {
+        return results;
+    }
+    
+    // Step 2: Initialize candidates with partitions of the root solution
+    const std::vector<int>& root_assignment = root_solution.first;
+    
+    // Create initial partitions based on the root solution
+    for (int i = 0; i < root_assignment.size(); ++i) {
+        if (root_assignment[i] != -1) {  // Only consider actual assignments
+            // Create enforced assignments (all assignments before position i)
+            std::map<int, int> enforced;
+            for (int j = 0; j < i; ++j) {
+                if (root_assignment[j] != -1) {
+                    enforced[j] = root_assignment[j];
+                }
+            }
+            
+            // Create forbidden assignment (the assignment at position i)
+            std::set<std::pair<int, int>> forbidden;
+            forbidden.insert({i, root_assignment[i]});
+            
+            // Create constrained matrix and solve
+            Eigen::MatrixXd constrained_matrix = create_constrained_matrix(cost_matrix, enforced, forbidden);
+            auto solution = solve_lap_munkres(constrained_matrix);
+            
+            // Check if solution is valid (finite cost)
+            if (std::isfinite(solution.second)) {
+                candidates.emplace(solution.second, solution.first, enforced, forbidden);
             }
         }
     }
+    
+    // Step 3: Main loop - extract best candidates and partition them
+    while (results.size() < k_best && !candidates.empty()) {
+        // Get the next best candidate
+        Candidate best_candidate = candidates.top();
+        candidates.pop();
+        
+        // Add to results
+        results.emplace_back(best_candidate.assignment, best_candidate.cost);
+        
+        // Partition this candidate to generate new candidates
+        const std::vector<int>& current_assignment = best_candidate.assignment;
+        
+        for (int i = 0; i < current_assignment.size(); ++i) {
+            if (current_assignment[i] != -1) {  // Only consider actual assignments
+                // Create new enforced assignments (all current enforced + assignments before position i)
+                std::map<int, int> new_enforced = best_candidate.enforced_assignments;
+                for (int j = 0; j < i; ++j) {
+                    if (current_assignment[j] != -1) {
+                        new_enforced[j] = current_assignment[j];
+                    }
+                }
+                
+                // Create new forbidden assignments (all current forbidden + assignment at position i)
+                std::set<std::pair<int, int>> new_forbidden = best_candidate.forbidden_assignments;
+                new_forbidden.insert({i, current_assignment[i]});
+                
+                // Create constrained matrix and solve
+                Eigen::MatrixXd constrained_matrix = create_constrained_matrix(cost_matrix, new_enforced, new_forbidden);
+                auto solution = solve_lap_munkres(constrained_matrix);
+                
+                // Check if solution is valid and not already found
+                if (std::isfinite(solution.second)) {
+                    bool is_duplicate = false;
+                    for (const auto& existing : results) {
+                        if (existing.associations == solution.first) {
+                            is_duplicate = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!is_duplicate) {
+                        candidates.emplace(solution.second, solution.first, new_enforced, new_forbidden);
+                    }
+                }
+            }
+        }
+    }
+    
     return results;
 }

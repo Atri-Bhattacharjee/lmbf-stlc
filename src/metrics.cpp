@@ -50,8 +50,9 @@ double calculate_ospa_distance(const std::vector<Track>& tracks,
     }
     size_t m = tracks.size();
     size_t n = ground_truths.size();
-    if (n == 0) return 0.0;
-    if (m == 0) return cutoff;
+    if (m == 0 && n == 0) return 0.0; // Handle the no-error case
+    if (n == 0) return cutoff; // If there are tracks but no truths, error is cutoff
+    if (m == 0) return cutoff; // If there are truths but no tracks, error is cutoff
     bool tracks_are_smaller = m <= n;
     size_t rows = tracks_are_smaller ? m : n;
     size_t cols = tracks_are_smaller ? n : m;

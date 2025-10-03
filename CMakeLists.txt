@@ -24,6 +24,7 @@ pybind11_add_module(lmb_engine
     src/in_orbit_sensor_model.cpp
     src/assignment.cpp
     src/metrics.cpp
+    src/two_body_propagator.cpp
 )
 
 # --- Minimal Test Python Module Target ---
@@ -41,7 +42,7 @@ set_target_properties(minimal_linear_propagator PROPERTIES
 )
 
 # --- Include Directories ---
-target_include_directories(lmb_engine PUBLIC src)
+target_include_directories(lmb_engine PUBLIC src external/munkres-cpp)
 target_include_directories(lmb_engine PRIVATE external/sgp4/libsgp4 external/astro/include)
 
 # --- Link Libraries ---

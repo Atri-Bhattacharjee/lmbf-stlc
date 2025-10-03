@@ -31,21 +31,26 @@ def main():
     print("TLE Line 1:", tle_line1)
     print("TLE Line 2:", tle_line2)
     # Create particle
+    state_vector = np.zeros(7)
+    # The TLE-based test does not use state_vector for propagation, but we must provide a 7D vector
+    state_vector[:6] = [0,0,0,0,0,0]
+    state_vector[6] = 0.0001 # bstar
     particle = lmb_engine.Particle()
+    particle.state_vector = state_vector
     particle.tle_line1 = tle_line1
     particle.tle_line2 = tle_line2
     # Small process noise for deterministic output
-    process_noise_cov = np.diag([1e-9]*6)
+    process_noise_cov = np.diag([1e-9]*6 + [1e-12])
     propagator = lmb_engine.SGP4Propagator(process_noise_cov)
     dt_seconds = 3600.0  # 1 hour
     print(f"Propagating forward by {dt_seconds} seconds...")
     result_particle = propagator.propagate(particle, dt_seconds)
-    state = result_particle.cartesian_state_vector
+    state = result_particle.state_vector[:6]
     pos = state[:3]
     vel = state[3:]
     print("\nResulting ECI State Vector:")
-    print(f"Position (km): X={pos[0]:.3f}, Y={pos[1]:.3f}, Z={pos[2]:.3f}")
-    print(f"Velocity (km/s): VX={vel[0]:.6f}, VY={vel[1]:.6f}, VZ={vel[2]:.6f}")
+    print(f"Position (km): X={pos[0]/1e3:.3f}, Y={pos[1]/1e3:.3f}, Z={pos[2]/1e3:.3f}")
+    print(f"Velocity (km/s): VX={vel[0]/1e3:.6f}, VY={vel[1]/1e3:.6f}, VZ={vel[2]/1e3:.6f}")
     print("\nVerification Instructions:")
     print("1. Go to https://celestrak.org/js-utilities/TleProp.html")
     print("2. Paste the above TLE lines into the input box.")
@@ -61,12 +66,12 @@ def test_sgp4_propagator_accuracy_and_noise():
     state_vector = np.zeros(7)
     state_vector[:3] = pos
     state_vector[3:6] = vel
-    state_vector[6] = 0.0 # ballistic coefficient
+    state_vector[6] = 0.0001 # ballistic coefficient
     particle = lmb_engine.Particle()
     particle.state_vector = state_vector
     particle.weight = 1.0
     # Process noise covariance (small, but nonzero)
-    process_noise_cov = np.eye(6) * 1e2 # meters^2 and (m/s)^2
+    process_noise_cov = np.diag([1e2]*3 + [1e-2]*3 + [1e-8])
     propagator = lmb_engine.SGP4Propagator(process_noise_cov)
     dt = 60.0 # seconds
     # Propagate multiple times to test noise
@@ -91,4 +96,5 @@ def test_sgp4_propagator_accuracy_and_noise():
     print("SGP4Propagator noise/accuracy test passed.")
 
 if __name__ == "__main__":
+    main()
     test_sgp4_propagator_accuracy_and_noise()

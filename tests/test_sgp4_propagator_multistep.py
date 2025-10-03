@@ -25,19 +25,25 @@ except ImportError:
 N_STEPS = 10
 DT = 60.0  # seconds
 
-# Initial state: circular LEO orbit (example)
-state_vector = np.array([
-    7000e3, 0.0, 0.0,   # position (m)
-    0.0, 7.546e3, 0.0   # velocity (m/s)
-])
-particle = lmb_engine.Particle()
-particle.state_vector = state_vector
+# Diverse initial states for robust SGP4 testing
+initial_states = [
+    # Standard circular LEO
+    np.array([7000e3, 0.0, 0.0, 0.0, 7.546e3, 0.0, 0.0001]),
+    # Negative x position, positive y velocity
+    np.array([-7000e3, 0.0, 0.0, 0.0, 7.546e3, 0.0, 0.0001]),
+    # Positive y position, negative x velocity
+    np.array([0.0, 7000e3, 0.0, -7.546e3, 0.0, 0.0, 0.0001]),
+]
 
 # Small process noise (diagonal)
-process_noise_cov = np.diag([1e-2]*3 + [1e-5]*3)
+# process_noise_cov = np.diag([1e-2]*3 + [1e-5]*3 + [1e-12])
+process_noise_cov = np.diag([0.0]*7)
 propagator = lmb_engine.SGP4Propagator(process_noise_cov)
 
-print("Step | state_vector")
-for step in range(N_STEPS):
-    particle = propagator.propagate(particle, DT)
-    print(f"{step:2d} | {particle.state_vector}")
+for idx, state_vector in enumerate(initial_states):
+    particle = lmb_engine.Particle()
+    particle.state_vector = state_vector.copy()
+    print(f"\nInitial State {idx}: {state_vector}")
+    for step in range(N_STEPS):
+        particle = propagator.propagate(particle, DT, step * DT)
+        print(f"  Step {step:2d} | {particle.state_vector}")

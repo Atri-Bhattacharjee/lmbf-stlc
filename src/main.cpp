@@ -13,6 +13,8 @@
 #include "assignment.h"
 #include "metrics.h"
 
+#include "two_body_propagator.h"
+
 PYBIND11_MODULE(lmb_engine, m) {
     m.doc() = "High-performance C++ engine for SMC-LMB space debris tracking";
     
@@ -77,6 +79,10 @@ PYBIND11_MODULE(lmb_engine, m) {
     pybind11::class_<SGP4Propagator, IOrbitPropagator, std::shared_ptr<SGP4Propagator>>(m, "SGP4Propagator")
         .def(pybind11::init<const Eigen::MatrixXd&>(), pybind11::arg("process_noise_covariance"))
         .def("propagate", &SGP4Propagator::propagate);
+
+    pybind11::class_<TwoBodyPropagator, IOrbitPropagator, std::shared_ptr<TwoBodyPropagator>>(m, "TwoBodyPropagator")
+        .def(pybind11::init<const Eigen::MatrixXd&>(), pybind11::arg("process_noise_covariance"))
+        .def("propagate", &TwoBodyPropagator::propagate);
     
     pybind11::class_<InOrbitSensorModel, ISensorModel, std::shared_ptr<InOrbitSensorModel>>(m, "InOrbitSensorModel")
         .def(pybind11::init<>(), "Default constructor for InOrbitSensorModel")
@@ -113,23 +119,4 @@ PYBIND11_MODULE(lmb_engine, m) {
           pybind11::arg("tracks"),
           pybind11::arg("ground_truths"),
           pybind11::arg("cutoff"));
-
-    // Factory functions for convenience (optional - can remove if not needed)
-    m.def("create_smc_lmb_tracker", [](double survival_probability) {
-        auto propagator = std::make_shared<LinearPropagator>();
-        auto sensor_model = std::make_shared<SimpleSensorModel>();
-        Eigen::MatrixXd covariance = Eigen::MatrixXd::Identity(7, 7) * 0.1;  // Default covariance
-        auto birth_model = std::make_shared<AdaptiveBirthModel>(100, 0.1, covariance);  // Default parameters
-        
-        return std::make_shared<SMC_LMB_Tracker>(propagator, sensor_model, birth_model, survival_probability);
-    }, "Creates a new SMC_LMB_Tracker with default model implementations");
-    
-    // Customizable factory function
-    m.def("create_custom_smc_lmb_tracker", [](int particles_per_track, double initial_existence_prob, const Eigen::MatrixXd& covariance, double survival_probability) {
-        auto propagator = std::make_shared<LinearPropagator>();
-        auto sensor_model = std::make_shared<SimpleSensorModel>();
-        auto birth_model = std::make_shared<AdaptiveBirthModel>(particles_per_track, initial_existence_prob, covariance);
-        
-        return std::make_shared<SMC_LMB_Tracker>(propagator, sensor_model, birth_model, survival_probability);
-    }, "Creates a new SMC_LMB_Tracker with custom birth model parameters");
 }

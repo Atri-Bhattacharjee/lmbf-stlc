@@ -35,9 +35,10 @@ public:
      * 
      * @param particle The input particle with current state [x, y, z, vx, vy, vz, bc]
      * @param dt The time step in seconds to propagate forward
+     * @param current_time The current simulation timestamp (seconds since epoch)
      * @return Particle The propagated particle with updated state
      */
-    virtual Particle propagate(const Particle& particle, double dt) const = 0;
+    virtual Particle propagate(const Particle& particle, double dt, double current_time) const = 0;
 };
 
 /**

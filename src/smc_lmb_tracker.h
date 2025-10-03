@@ -31,15 +31,6 @@ private:
     std::shared_ptr<IBirthModel> birth_model_;         //!< Shared pointer to the birth model
     double survival_probability_;                       //!< Configuration parameter for track survival probability
 
-    // Helper to generate all possible hypotheses via recursion (brute-force).
-    void generate_hypotheses_recursive(
-        int track_idx,
-        std::vector<int>& current_association,
-        std::vector<bool>& meas_is_used,
-        const std::vector<Track>& tracks,
-        const std::vector<Measurement>& measurements,
-        std::vector<Hypothesis>& out_hypotheses) const;
-
 public:
     /**
      * @brief Default constructor

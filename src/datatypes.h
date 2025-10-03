@@ -34,17 +34,10 @@ struct TrackLabel {
  * with an associated probability weight.
  */
 struct Particle {
-    //! [x, y, z, vx, vy, vz, bc] where position is ECI in km, velocity is ECI in km/s, and bc is the ballistic coefficient in m²/kg
+    //! [x, y, z, vx, vy, vz, bstar] where position is ECI in m, velocity is ECI in m/s, and bstar is the drag term
     Eigen::VectorXd state_vector;
     double weight;  //!< The probability weight of this particle
-
-    Particle() : state_vector(7), weight(0.0) {
-        for (int i = 0; i < 6; ++i) {
-            if (!std::isfinite(state_vector[i])) {
-                std::cerr << "[Particle] Non-finite value in state_vector at construction!" << std::endl;
-            }
-        }
-    }
+    Particle() : state_vector(7), weight(0.0) {}
 };
 
 /**
@@ -114,14 +107,13 @@ public:
  */
 struct Measurement {
     double timestamp_;                    //!< The epoch timestamp of the measurement
-    //! [azimuth (rad), elevation (rad), range (km)]
-    Eigen::VectorXd value_;              //!< The measurement vector
-    Eigen::MatrixXd covariance_;         //!< The 3x3 measurement noise covariance matrix
+    Eigen::VectorXd value_;              //!< The 7D measurement vector [x, y, z, vx, vy, vz, bstar]
+    Eigen::MatrixXd covariance_;         //!< The 7x7 measurement noise covariance matrix
     std::string sensor_id_;              //!< Identifier for the sensor that produced the measurement
     Eigen::VectorXd sensor_state_;           //!< The 6D ECI state of the sensor satellite
 
     Measurement()
-        : timestamp_(0.0), value_(Eigen::VectorXd::Zero(6)), covariance_(Eigen::MatrixXd::Zero(6,6)), sensor_id_(), sensor_state_(Eigen::VectorXd::Zero(7)) {}
+        : timestamp_(0.0), value_(Eigen::VectorXd::Zero(7)), covariance_(Eigen::MatrixXd::Zero(7,7)), sensor_id_(), sensor_state_(Eigen::VectorXd::Zero(6)) {}
 };
 
 /**

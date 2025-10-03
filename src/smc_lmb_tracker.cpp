@@ -14,6 +14,7 @@ SMC_LMB_Tracker::SMC_LMB_Tracker(std::shared_ptr<IOrbitPropagator> propagator,
 
 void SMC_LMB_Tracker::predict(double dt) {
     // Projects the filter state forward in time.
+    const double previous_time = current_state_.timestamp(); // Store the timestamp of the input particles.
     current_state_.set_timestamp(current_state_.timestamp() + dt);
     
     // Get a mutable copy of tracks for modification
@@ -28,7 +29,7 @@ void SMC_LMB_Tracker::predict(double dt) {
         propagated_particles.reserve(track.particles().size());
         
         for (const Particle& particle : track.particles()) {
-            Particle new_particle = propagator_->propagate(particle, dt);
+            Particle new_particle = propagator_->propagate(particle, dt, previous_time);
             propagated_particles.push_back(new_particle);
         }
         
@@ -97,7 +98,7 @@ void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
         }
         for (size_t m = 0; m < num_meas; ++m) {
             if (measurement_association_sums[m] > 0.0) {
-                double assoc_term = measurement_association_sums[m] * (1.0 - tracks[track_idx].existence_probability());
+                double assoc_term = measurement_association_sums[m] * tracks[track_idx].existence_probability();
                 new_existence_probability += assoc_term;
                 for (size_t p = 0; p < num_particles; ++p) {
                     double particle_likelihood = measurement_particle_likelihoods[m][p];
@@ -133,7 +134,12 @@ void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
                 cumsum += updated_particles[idx].weight;
                 ++idx;
             }
-            Particle resampled = (idx > 0) ? updated_particles[idx-1] : updated_particles[0];
+            // Get a const reference to the chosen particle to avoid an initial copy
+            const Particle& chosen_particle = (idx > 0) ? updated_particles[idx-1] : updated_particles[0];
+
+            // Create the new particle and FORCE a deep copy of the state vector
+            Particle resampled;
+            resampled.state_vector = chosen_particle.state_vector; // Eigen's operator= performs a deep copy
             resampled.weight = 1.0 / num_particles;
             resampled_particles.push_back(resampled);
         }
@@ -146,7 +152,9 @@ void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
     auto best_hyp = std::max_element(norm_weights.begin(), norm_weights.end()) - norm_weights.begin();
     std::vector<bool> used_meas(num_meas, false);
     for (int assoc : hypotheses[best_hyp].associations) {
-        if (assoc != num_meas) used_meas[assoc] = true;
+        if (assoc >= 0 && assoc < num_meas) {
+            used_meas[assoc] = true;
+        }
     }
     std::vector<Measurement> unused_meas;
     for (size_t m = 0; m < num_meas; ++m) {

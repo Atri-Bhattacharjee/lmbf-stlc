@@ -3,12 +3,13 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import json  # Added import
 
 # Ensure lmb_engine is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'lmb_engine', 'Debug')))
 import lmb_engine
 
-DT = 1.0  # seconds
+DT = 60.0  # seconds
 NUM_STEPS = 20
 NUM_MONTE_CARLO_RUNS = 1
 OSPA_CUTOFF = 10000.0  # meters
@@ -18,102 +19,105 @@ CONFIGURATIONS = [
 ]
 
 def run_single_simulation(config):
-    # Initial ground truth ECI states (meters, m/s)
-    gt_init_states = [
-        np.array([7000e3, 0, 0, 0, 7.546e3, 0]),
-        np.array([7000e3, 100e3, 0, 0, 7.546e3, 0]),
-    ]
-    # Covariance for birth model
-    cov = np.eye(7) * 0.1
-    tracker = lmb_engine.create_custom_smc_lmb_tracker(
-        config['num_particles'], 0.1, cov, 0.99)
-    # Create SGP4Propagator for ground truth propagation
-    sgp4_cov = np.diag([1e-2]*3 + [1e-5]*3)
-    gt_propagator = lmb_engine.SGP4Propagator(sgp4_cov)
-    # Initial ground truth particles (with state_vector only)
-    gt_particles = []
-    for state in gt_init_states:
-        p = lmb_engine.Particle()
-        p.state_vector = np.concatenate([state, [0.0]]) # 7D: [pos, vel, ballistic coeff]
-        gt_particles.append(p)
+    # Load pre-generated ground truth data
+    with open('ground_truth_data.json', 'r') as f:
+        ground_truth_data = json.load(f)
+
+    # twobody process noise covariance (7x7)
+    pos_var = 1**2
+    vel_var = 0.1**2
+    bstar_var = 1e-8**2
+    # twobody_cov = np.diag([0.0]*7)
+    twobody_cov = np.diag([pos_var]*3 + [vel_var]*3 + [bstar_var])
+    propagator = lmb_engine.TwoBodyPropagator(twobody_cov)
+    sensor_model = lmb_engine.InOrbitSensorModel()
+    birth_cov = np.diag([10**2]*3 + [1.0**2]*3 + [1e-6**2])
+    birth_model = lmb_engine.AdaptiveBirthModel(config['num_particles'], 0.9, birth_cov)
+    tracker = lmb_engine.SMC_LMB_Tracker(propagator, sensor_model, birth_model, 0.99)
+
     ospa_list = []
     for step in range(NUM_STEPS):
         print(f"Step {step+1}/{NUM_STEPS}")
-        # Propagate ground truths using SGP4
-        for i in range(len(gt_particles)):
-            gt_particles[i] = gt_propagator.propagate(gt_particles[i], DT)
-        # Extract updated ground truth states and velocities from state_vector
-        gt_states = [p.state_vector[:3] for p in gt_particles]
-        gt_vels = [p.state_vector[3:6] for p in gt_particles]
+        # Load ground truth states for this step
+        current_gt_states = ground_truth_data[step]
+        # Convert to numpy arrays for downstream use
+        gt_states = [np.array(gt[:7]) for gt in current_gt_states]
         # Generate measurements (with clutter)
         measurements = []
-        for gt_pos, gt_vel in zip(gt_states, gt_vels):
+        for gt_state in gt_states:
             meas = lmb_engine.Measurement()
             meas.timestamp_ = step * DT
-            # Measurement is noisy ECI position and velocity
-            noisy_pos = gt_pos + np.random.normal(0, 5, 3)
-            noisy_vel = gt_vel + np.random.normal(0, 0.05, 3)
-            meas.value_ = np.concatenate([noisy_pos, noisy_vel])
-            meas.covariance_ = np.diag([5**2]*3 + [0.05**2]*3)
-            meas.sensor_id_ = "0"
-            meas.sensor_state_ = np.zeros(7)
+            noisy_pos = gt_state[:3] + np.random.normal(0, 5, 3)
+            noisy_vel = gt_state[3:6] + np.random.normal(0, 0.05, 3)
+            noisy_bstar = gt_state[6] + np.random.normal(0, 1e-5)
+            # noisy_pos = gt_state[:3] + np.random.normal(0, 0, 3)
+            # noisy_vel = gt_state[3:6] + np.random.normal(0, 0, 3)
+            # noisy_bstar = gt_state[6] + np.random.normal(0, 0)
+            meas.value_ = np.concatenate([noisy_pos, noisy_vel, [noisy_bstar]])
+            # meas.covariance_ = np.diag([1e-12]*7)
+            meas.covariance_ = np.diag([500**2]*3 + [50**2]*3 + [1e-5**2])
+            # meas.sensor_id_ = "0"
+            # meas.sensor_state_ = gt_state[:6]
             measurements.append(meas)
-        # Add clutter
-        num_clutter = np.random.poisson(config['clutter_rate'])
-        for _ in range(num_clutter):
-            clutter_meas = lmb_engine.Measurement()
-            clutter_meas.timestamp_ = step * DT
-            clutter_pos = np.random.uniform(6900e3, 7100e3, 3)
-            clutter_vel = np.random.uniform(-1e3, 1e3, 3)
-            clutter_meas.value_ = np.concatenate([clutter_pos, clutter_vel])
-            clutter_meas.covariance_ = np.diag([50**2]*3 + [0.5**2]*3)
-            clutter_meas.sensor_id_ = "0"
-            clutter_meas.sensor_state_ = np.zeros(7)
-            measurements.append(clutter_meas)
+        # num_clutter = np.random.poisson(config['clutter_rate'])
+        # for _ in range(num_clutter):
+        #     clutter_meas = lmb_engine.Measurement()
+        #     clutter_meas.timestamp_ = step * DT
+        #     clutter_pos = np.random.uniform(6900e3, 7100e3, 3)
+        #     clutter_vel = np.random.uniform(-1e3, 1e3, 3)
+        #     clutter_bstar = np.random.uniform(0, 2e-4)
+        #     clutter_meas.value_ = np.concatenate([clutter_pos, clutter_vel, [clutter_bstar]])
+        #     clutter_meas.covariance_ = np.diag([50**2]*3 + [0.5**2]*3 + [1e-4**2])
+        #     clutter_meas.sensor_id_ = "0"
+        #     clutter_meas.sensor_state_ = np.concatenate([clutter_pos, clutter_vel])
+        #     measurements.append(clutter_meas)
         tracker.predict(DT)
-        # Print particle weights before update (before resampling)
         tracks = tracker.get_tracks()
-        for idx, t in enumerate(tracks):
-            if hasattr(t, 'particles'):
-                ps = t.particles()
-                if ps:
-                    weights = [p.weight for p in ps]
-                    print(f"      Track {idx} weights before update: {weights}")
+        if step == 1: # After the first predict step
+            predicted_tracks = tracker.get_tracks()
+            for i, track in enumerate(predicted_tracks):
+                particles = track.particles()
+                if particles:
+                    states = np.array([p.state_vector for p in particles])
+                    cov = np.cov(states, rowvar=False)
+                    # We only care about the diagonal (variances)
+                    print(f"Track {i} Predicted Variances (pos/vel): {np.diag(cov)[:6]}")
         tracker.update(measurements)
         tracks = tracker.get_tracks()
-        # Print particle weights after update (after resampling)
-        for idx, t in enumerate(tracks):
-            if hasattr(t, 'particles'):
-                ps = t.particles()
-                if ps:
-                    weights = [p.weight for p in ps]
-                    print(f"      Track {idx} weights after update: {weights}")
         print(f"    Number of tracks: {len(tracks)}")
         for idx, t in enumerate(tracks):
             print(f"      Track {idx} existence probability: {t.existence_probability()}")
-        # Compute and print error between track means and closest ground truth
         track_means = []
         for t in tracks:
             if hasattr(t, 'particles'):
                 ps = t.particles()
                 if ps:
-                    mean = np.zeros(6)
+                    mean = np.zeros(7)
                     total_weight = 0.0
                     for p in ps:
-                        mean[:6] += p.state_vector[:6] * p.weight
+                        mean += p.state_vector * p.weight
                         total_weight += p.weight
                     if total_weight > 0.0:
                         mean /= total_weight
                     track_means.append(mean)
-        gt_states_full = [np.concatenate([gt_states[i], gt_vels[i]]) for i in range(len(gt_states))]
+        gt_states_full = [np.array(gt) for gt in current_gt_states]
+        # Print ground truth states
+        print("    Ground truth states:")
+        for i, gt in enumerate(gt_states_full):
+            print(f"      GT {i}: {gt}")
+        # Print track means
+        print("    Track means:")
+        for i, track_mean in enumerate(track_means):
+            print(f"      Track {i}: {track_mean}")
         for i, track_mean in enumerate(track_means):
             errors = [np.linalg.norm(track_mean - gt) for gt in gt_states_full]
             min_error = np.min(errors)
             closest_gt = gt_states_full[np.argmin(errors)]
             print(f"    Track {i}: min error to GT = {min_error:.3f}, track state = {track_mean}, closest GT = {closest_gt}")
         t0 = time.time()
-        if tracks and gt_states_full:
-            ospa = lmb_engine.calculate_ospa_distance(tracks, gt_states_full, OSPA_CUTOFF)
+        ospa_gt_states_full = [np.array(gt[:6]) for gt in current_gt_states]
+        if tracks and ospa_gt_states_full:
+            ospa = lmb_engine.calculate_ospa_distance(tracks, ospa_gt_states_full, OSPA_CUTOFF)
         else:
             ospa = OSPA_CUTOFF
         t1 = time.time()
