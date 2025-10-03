@@ -39,30 +39,25 @@ std::vector<Track> AdaptiveBirthModel::generate_new_tracks(const std::vector<Mea
         particles.reserve(particles_per_track_);
         
     // Define the mean state vector
-    // Use the full 7D measurement value as the mean state
-    Eigen::VectorXd mean_state(7);
+    // Use the full 6D measurement value as the mean state
+    Eigen::VectorXd mean_state(6);
     mean_state = measurement.value_;
         
         // Generate particles
         for (int particle_idx = 0; particle_idx < particles_per_track_; ++particle_idx) {
             Particle particle;
-            
-            // Generate 7x1 vector of standard normal random numbers
-            Eigen::VectorXd standard_normal_vector(7);
-            for (int i = 0; i < 7; ++i) {
+            // Generate 6x1 vector of standard normal random numbers
+            Eigen::VectorXd standard_normal_vector(6);
+            for (int i = 0; i < 6; ++i) {
                 standard_normal_vector(i) = dist(gen);
             }
-            
             // Create the final sampled state vector using Cholesky decomposition
             // sampled_state = mean_state + L * standard_normal_vector
             Eigen::VectorXd sampled_state = mean_state + L * standard_normal_vector;
-            
             // Assign the sampled state to the particle's state vector
             particle.state_vector = sampled_state;
-            
             // Assign equal weight to each particle
             particle.weight = 1.0 / particles_per_track_;
-            
             // Add the particle to the track's particle vector
             particles.push_back(particle);
         }

@@ -50,7 +50,7 @@ PYBIND11_MODULE(lmb_engine, m) {
         .def(pybind11::init<>())
         .def(pybind11::init<double, const std::vector<Track>&>())
         .def("timestamp", &FilterState::timestamp)
-        .def("tracks", &FilterState::tracks, pybind11::return_value_policy::reference_internal)
+        .def("tracks", static_cast<const std::vector<Track>& (FilterState::*)() const>(&FilterState::tracks), pybind11::return_value_policy::reference_internal)
         .def("set_timestamp", &FilterState::set_timestamp)
         .def("set_tracks", &FilterState::set_tracks);
     
@@ -91,11 +91,12 @@ PYBIND11_MODULE(lmb_engine, m) {
     // Bind the main tracker class with direct constructor support
     pybind11::class_<SMC_LMB_Tracker, std::shared_ptr<SMC_LMB_Tracker>>(m, "SMC_LMB_Tracker")
         .def(pybind11::init<>(), "Default constructor for SMC_LMB_Tracker")
-        .def(pybind11::init<std::shared_ptr<IOrbitPropagator>, std::shared_ptr<ISensorModel>, std::shared_ptr<IBirthModel>, double>(),
+        .def(pybind11::init<std::shared_ptr<IOrbitPropagator>, std::shared_ptr<ISensorModel>, std::shared_ptr<IBirthModel>, double, double>(),
              pybind11::arg("propagator"),
              pybind11::arg("sensor_model"),
              pybind11::arg("birth_model"),
              pybind11::arg("survival_probability"),
+             pybind11::arg("detection_probability"),
              "Constructor for SMC_LMB_Tracker with model dependencies")
         .def("predict", &SMC_LMB_Tracker::predict, "Runs the predict step for a given time delta")
         .def("update", &SMC_LMB_Tracker::update, "Runs the update step with measurements")

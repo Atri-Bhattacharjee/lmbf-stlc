@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'lmb_
 import lmb_engine
 
 DT = 60.0  # seconds
-NUM_STEPS = 20
+NUM_STEPS = 5
 NUM_MONTE_CARLO_RUNS = 1
 OSPA_CUTOFF = 10000.0  # meters
 
@@ -23,17 +23,16 @@ def run_single_simulation(config):
     with open('ground_truth_data.json', 'r') as f:
         ground_truth_data = json.load(f)
 
-    # twobody process noise covariance (7x7)
-    pos_var = 1**2
-    vel_var = 0.1**2
-    bstar_var = 1e-8**2
-    # twobody_cov = np.diag([0.0]*7)
-    twobody_cov = np.diag([pos_var]*3 + [vel_var]*3 + [bstar_var])
+    # twobody process noise covariance (6x6)
+    pos_var = 10**2
+    vel_var = 1.0**2
+    # twobody_cov = np.diag([0.0]*6)
+    twobody_cov = np.diag([pos_var]*3 + [vel_var]*3)
     propagator = lmb_engine.TwoBodyPropagator(twobody_cov)
     sensor_model = lmb_engine.InOrbitSensorModel()
-    birth_cov = np.diag([10**2]*3 + [1.0**2]*3 + [1e-6**2])
+    birth_cov = np.diag([5**2]*3 + [0.05**2]*3)
     birth_model = lmb_engine.AdaptiveBirthModel(config['num_particles'], 0.9, birth_cov)
-    tracker = lmb_engine.SMC_LMB_Tracker(propagator, sensor_model, birth_model, 0.99)
+    tracker = lmb_engine.SMC_LMB_Tracker(propagator, sensor_model, birth_model, 0.99, 0.99)
 
     ospa_list = []
     for step in range(NUM_STEPS):
@@ -41,23 +40,16 @@ def run_single_simulation(config):
         # Load ground truth states for this step
         current_gt_states = ground_truth_data[step]
         # Convert to numpy arrays for downstream use
-        gt_states = [np.array(gt[:7]) for gt in current_gt_states]
+        gt_states = [np.array(gt[:6]) for gt in current_gt_states]
         # Generate measurements (with clutter)
         measurements = []
         for gt_state in gt_states:
             meas = lmb_engine.Measurement()
             meas.timestamp_ = step * DT
-            noisy_pos = gt_state[:3] + np.random.normal(0, 5, 3)
-            noisy_vel = gt_state[3:6] + np.random.normal(0, 0.05, 3)
-            noisy_bstar = gt_state[6] + np.random.normal(0, 1e-5)
-            # noisy_pos = gt_state[:3] + np.random.normal(0, 0, 3)
-            # noisy_vel = gt_state[3:6] + np.random.normal(0, 0, 3)
-            # noisy_bstar = gt_state[6] + np.random.normal(0, 0)
-            meas.value_ = np.concatenate([noisy_pos, noisy_vel, [noisy_bstar]])
-            # meas.covariance_ = np.diag([1e-12]*7)
-            meas.covariance_ = np.diag([500**2]*3 + [50**2]*3 + [1e-5**2])
-            # meas.sensor_id_ = "0"
-            # meas.sensor_state_ = gt_state[:6]
+            noisy_pos = gt_state[:3] + np.random.normal(0, 10, 3)
+            noisy_vel = gt_state[3:6] + np.random.normal(0, 1, 3)
+            meas.value_ = np.concatenate([noisy_pos, noisy_vel])
+            meas.covariance_ = np.diag([10**2]*3 + [1.0**2]*3)
             measurements.append(meas)
         # num_clutter = np.random.poisson(config['clutter_rate'])
         # for _ in range(num_clutter):
@@ -92,7 +84,7 @@ def run_single_simulation(config):
             if hasattr(t, 'particles'):
                 ps = t.particles()
                 if ps:
-                    mean = np.zeros(7)
+                    mean = np.zeros(6)
                     total_weight = 0.0
                     for p in ps:
                         mean += p.state_vector * p.weight

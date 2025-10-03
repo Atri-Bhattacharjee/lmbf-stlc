@@ -2,47 +2,42 @@
 #include "assignment.h"
 
 SMC_LMB_Tracker::SMC_LMB_Tracker(std::shared_ptr<IOrbitPropagator> propagator,
-                                 std::shared_ptr<ISensorModel> sensor_model,
-                                 std::shared_ptr<IBirthModel> birth_model,
-                                 double survival_probability)
-    : current_state_(0.0, std::vector<Track>{}),  // Initialize with timestamp 0.0 and empty track list
-      propagator_(std::move(propagator)),
-      sensor_model_(std::move(sensor_model)),
-      birth_model_(std::move(birth_model)),
-      survival_probability_(survival_probability) {
+                                                                 std::shared_ptr<ISensorModel> sensor_model,
+                                                                 std::shared_ptr<IBirthModel> birth_model,
+                                                                 double survival_probability,
+                                                                 double detection_probability)
+        : current_state_(0.0, std::vector<Track>{}),
+            propagator_(std::move(propagator)),
+            sensor_model_(std::move(sensor_model)),
+            birth_model_(std::move(birth_model)),
+            survival_probability_(survival_probability),
+            detection_probability_(detection_probability) {
 }
 
 void SMC_LMB_Tracker::predict(double dt) {
-    // Projects the filter state forward in time.
-    const double previous_time = current_state_.timestamp(); // Store the timestamp of the input particles.
+    // Projects the filter state forward in time by operating in-place.
+    const double previous_time = current_state_.timestamp();
     current_state_.set_timestamp(current_state_.timestamp() + dt);
-    
-    // Get a mutable copy of tracks for modification
-    std::vector<Track> tracks = current_state_.tracks();
-    
+    // Get a direct, MODIFIABLE reference to the internal track vector.
+    std::vector<Track>& tracks = current_state_.tracks();
     for (Track& track : tracks) {
-        // Update existence probability by applying survival probability
+        // Update existence probability in-place.
         track.set_existence_probability(track.existence_probability() * survival_probability_);
-        
-        // Propagate particles
+        // Propagate particles.
         std::vector<Particle> propagated_particles;
         propagated_particles.reserve(track.particles().size());
-        
         for (const Particle& particle : track.particles()) {
             Particle new_particle = propagator_->propagate(particle, dt, previous_time);
             propagated_particles.push_back(new_particle);
         }
-        
-        // Replace track's old particle cloud with propagated particles
+        // Replace the track's old particle cloud with the new one.
         track.set_particles(propagated_particles);
     }
-    
-    // Set the modified tracks back to the state
-    current_state_.set_tracks(tracks);
+    // No need to call set_tracks(), as we have modified the state directly.
 }
 
 void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
-    std::vector<Track> tracks = current_state_.tracks();
+    std::vector<Track>& tracks = current_state_.tracks();
     size_t num_tracks = tracks.size();
     size_t num_meas = measurements.size();
     if (num_tracks == 0) {
@@ -50,14 +45,30 @@ void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
         set_tracks(born_tracks);
         return;
     }
-    // 1. Build cost matrix (tracks x (measurements + 1))
-    Eigen::MatrixXd cost_matrix(num_tracks, num_meas + 1);
+    // 1. Build cost matrix with theoretically correct costs
+    Eigen::MatrixXd cost_matrix(num_tracks, num_meas + num_tracks);
     for (size_t i = 0; i < num_tracks; ++i) {
+        // --- Association Costs (Track i to Measurement j) ---
+        // Cost is -log( r * Pd * likelihood )
+        double track_r = tracks[i].existence_probability();
         for (size_t j = 0; j < num_meas; ++j) {
             double likelihood = compute_association_likelihood(tracks[i], measurements[j]);
-            cost_matrix(i, j) = -std::log(std::max(likelihood, 1e-12));
+            cost_matrix(i, j) = -std::log(std::max(track_r * detection_probability_ * likelihood, 1e-12));
         }
-        cost_matrix(i, num_meas) = -std::log(std::max(1.0 - tracks[i].existence_probability(), 1e-12));
+
+        // --- Missed Detection Costs ---
+        // To allow each track to be missed, we create num_tracks "dummy" columns.
+        // The assignment of track i to dummy column i represents a missed detection for track i.
+        // All other assignments between track i and dummy column k (where k != i) are impossible (infinite cost).
+        for (size_t j = 0; j < num_tracks; ++j) {
+            if (i == j) {
+                // Cost for track i to be missed: -log( (1-r) + r*(1-Pd) )
+                double miss_prob = (1.0 - track_r) + (track_r * (1.0 - detection_probability_));
+                cost_matrix(i, num_meas + i) = -std::log(std::max(miss_prob, 1e-12));
+            } else {
+                cost_matrix(i, num_meas + j) = std::numeric_limits<double>::infinity();
+            }
+        }
     }
     // 2. Solve assignment (K-best)
     std::vector<Hypothesis> hypotheses = solve_assignment(cost_matrix, 100);
@@ -149,13 +160,18 @@ void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
         updated_tracks.push_back(final_track);
     }
     // 5. Find unused measurements from best hypothesis
-    auto best_hyp = std::max_element(norm_weights.begin(), norm_weights.end()) - norm_weights.begin();
+    auto best_hyp_idx = std::max_element(norm_weights.begin(), norm_weights.end()) - norm_weights.begin();
+    const auto& best_associations = hypotheses[best_hyp_idx].associations;
+
     std::vector<bool> used_meas(num_meas, false);
-    for (int assoc : hypotheses[best_hyp].associations) {
-        if (assoc >= 0 && assoc < num_meas) {
-            used_meas[assoc] = true;
+    for (int track_idx = 0; track_idx < best_associations.size(); ++track_idx) {
+        int meas_idx = best_associations[track_idx];
+        // An association is to a real measurement ONLY if its index is less than num_meas
+        if (meas_idx >= 0 && meas_idx < num_meas) {
+            used_meas[meas_idx] = true;
         }
     }
+
     std::vector<Measurement> unused_meas;
     for (size_t m = 0; m < num_meas; ++m) {
         if (!used_meas[m]) unused_meas.push_back(measurements[m]);
@@ -172,7 +188,7 @@ void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
         }
     }
 
-    set_tracks(pruned_tracks);
+    current_state_.tracks().swap(pruned_tracks);
 }
 
 // Helper: average likelihood over all particles

@@ -31,13 +31,12 @@ Particle TwoBodyPropagator::propagate(const Particle& particle, double dt, doubl
     // Create propagated particle
     Particle propagated_particle = particle;
     propagated_particle.state_vector.head(6) = y1;
-    // bstar (7th element) is carried forward
     // Add process noise
-    if (process_noise_covariance_.rows() == 7 && process_noise_covariance_.cols() == 7) {
+    if (process_noise_covariance_.rows() == 6 && process_noise_covariance_.cols() == 6) {
         static thread_local std::mt19937 gen(std::random_device{}());
         std::normal_distribution<> dist(0.0, 1.0);
-        Eigen::VectorXd noise_vec(7);
-        for (int i = 0; i < 7; ++i) noise_vec(i) = dist(gen);
+        Eigen::VectorXd noise_vec(6);
+        for (int i = 0; i < 6; ++i) noise_vec(i) = dist(gen);
         Eigen::LLT<Eigen::MatrixXd> llt(process_noise_covariance_);
         Eigen::MatrixXd L = llt.matrixL();
         propagated_particle.state_vector += L * noise_vec;
