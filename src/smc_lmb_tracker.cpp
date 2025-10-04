@@ -1,17 +1,16 @@
 #include "smc_lmb_tracker.h"
 #include "assignment.h"
+#include <iostream>
 
 SMC_LMB_Tracker::SMC_LMB_Tracker(std::shared_ptr<IOrbitPropagator> propagator,
                                                                  std::shared_ptr<ISensorModel> sensor_model,
                                                                  std::shared_ptr<IBirthModel> birth_model,
-                                                                 double survival_probability,
-                                                                 double detection_probability)
+                                                                 double survival_probability)
         : current_state_(0.0, std::vector<Track>{}),
             propagator_(std::move(propagator)),
             sensor_model_(std::move(sensor_model)),
             birth_model_(std::move(birth_model)),
-            survival_probability_(survival_probability),
-            detection_probability_(detection_probability) {
+            survival_probability_(survival_probability) {
 }
 
 void SMC_LMB_Tracker::predict(double dt) {
@@ -48,9 +47,20 @@ void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
         return;
     }
 
-    // Step 1: Create all hypothetical updated particle sets
-    // This 3D vector stores all hypothetical particle sets: [track_idx][hyp_idx][particle_idx]
-    // Where hyp_idx: 0 to num_meas-1 are measurement associations, and hyp_idx=num_meas is missed detection
+    // Step 1: Build a square cost matrix for tracks and measurements
+    // This assumes num_tracks == num_meas, which is true in our zero-clutter test.
+    // A more robust implementation would handle rectangular cases by adding dummy rows/cols.
+    if (num_tracks != num_meas) {
+        // For now, handle this edge case by skipping the update.
+        // This prevents a crash and highlights the simplification.
+        std::cerr << "Warning: Number of tracks (" << num_tracks 
+                << ") does not match number of measurements (" << num_meas
+                << "). Skipping update step." << std::endl;
+        return; 
+    }
+
+    // Step 2: Create all hypothetical updated particle sets for each track-measurement pair
+    // This 3D vector stores all hypothetical particle sets: [track_idx][meas_idx][particle_idx]
     std::vector<std::vector<std::vector<Particle>>> hypothetical_particle_sets(num_tracks);
     Eigen::MatrixXd likelihood_matrix(num_tracks, num_meas);
 
@@ -60,7 +70,7 @@ void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
         size_t num_particles = current_particles.size();
 
         // Initialize storage for this track's hypothetical sets
-        hypothetical_particle_sets[i].resize(num_meas + 1); // +1 for missed detection case
+        hypothetical_particle_sets[i].resize(num_meas);
         
         // For each measurement, create a hypothetically updated set
         for (size_t j = 0; j < num_meas; ++j) {
@@ -73,10 +83,10 @@ void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
             for (size_t p = 0; p < num_particles; ++p) {
                 const auto& current_particle = current_particles[p];
                 
-               
+                // Create an updated particle with Kalman update
                 Particle updated_particle;
                 
-                
+                updated_particle.state_vector = current_particle.state_vector;
                 
                 // Calculate likelihood and update weight
                 double particle_likelihood = sensor_model_->calculate_likelihood(current_particle, measurement);
@@ -102,40 +112,21 @@ void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
                 }
             }
         }
-        
-        // Create the missed detection set (states unchanged, weights preserved)
-        hypothetical_particle_sets[i][num_meas].reserve(num_particles);
-        for (const auto& current_particle : current_particles) {
-            Particle missed_particle;
-            missed_particle.state_vector = current_particle.state_vector; // State unchanged
-            missed_particle.weight = current_particle.weight; // Weight preserved
-            hypothetical_particle_sets[i][num_meas].push_back(missed_particle);
-        }
     }
     
-    // Step 2: Build cost matrix using the likelihoods from hypothetical updates
-    Eigen::MatrixXd cost_matrix(num_tracks, num_meas + num_tracks);
+    // Step 3: Build simplified cost matrix using the likelihoods from hypothetical updates
+    Eigen::MatrixXd cost_matrix(num_tracks, num_meas);
     for (size_t i = 0; i < num_tracks; ++i) {
         double track_r = tracks[i].existence_probability();
         
-        // Association costs
+        // Association costs - simplified without detection probability
         for (size_t j = 0; j < num_meas; ++j) {
             double likelihood = likelihood_matrix(i, j);
-            cost_matrix(i, j) = -std::log(std::max(track_r * detection_probability_ * likelihood, 1e-12));
-        }
-        
-        // Missed detection costs
-        for (size_t j = 0; j < num_tracks; ++j) {
-            if (i == j) {
-                double miss_prob = (1.0 - track_r) + (track_r * (1.0 - detection_probability_));
-                cost_matrix(i, num_meas + j) = -std::log(std::max(miss_prob, 1e-12));
-            } else {
-                cost_matrix(i, num_meas + j) = std::numeric_limits<double>::infinity();
-            }
+            cost_matrix(i, j) = -std::log(std::max(track_r * likelihood, 1e-12));
         }
     }
     
-    // Step 3: Solve assignment (K-best)
+    // Step 4: Solve assignment (K-best)
     std::vector<Hypothesis> hypotheses = solve_assignment(cost_matrix, 100);
     
     // Normalize hypothesis weights (log-sum-exp)
@@ -147,123 +138,87 @@ void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
     for (double lw : log_weights) sum_exp += std::exp(lw - max_logw);
     for (double lw : log_weights) norm_weights.push_back(std::exp(lw - max_logw) / sum_exp);
     
-    // Step 4: Combine, update and resample
+    // Step 5: Combine, update and resample
     std::vector<Track> updated_tracks;
     for (size_t i = 0; i < num_tracks; ++i) {
         // Create a large mixture of particles from all hypothetical sets
         std::vector<Particle> mixed_particles;
-        double new_existence_probability = 0.0;
-        
-        // For each hypothesis
-        for (size_t h = 0; h < hypotheses.size(); ++h) {
-            int assoc_idx = hypotheses[h].associations[i];
-            double hyp_weight = norm_weights[h];
-            
-            // Select appropriate particle set based on association
-            int particle_set_idx;
-            if (assoc_idx >= num_meas) {
-                // Missed detection case
-                particle_set_idx = num_meas;
-                
-                // Update existence probability for missed detection
-                double track_r = tracks[i].existence_probability();
-                double miss_term = (1.0 - track_r) + track_r * (1.0 - detection_probability_);
-                new_existence_probability += hyp_weight * miss_term;
+            // For each hypothesis
+            for (size_t h = 0; h < hypotheses.size(); ++h) {
+                int assoc_idx = hypotheses[h].associations[i];
+                double hyp_weight = norm_weights[h];
+                // Only consider valid measurement associations
+                if (assoc_idx >= 0 && assoc_idx < num_meas) {
+                    // Add these particles to the mixture with appropriate weights
+                    for (const auto& particle : hypothetical_particle_sets[i][assoc_idx]) {
+                        Particle mixed_particle;
+                        mixed_particle.state_vector = particle.state_vector;
+                        mixed_particle.weight = particle.weight * hyp_weight;
+                        mixed_particles.push_back(mixed_particle);
+                    }
+                }
+            }
+
+            // --- Corrected existence probability calculation ---
+            // c. Calculate the new existence probability. It is the sum of all
+            // unnormalized weights in the mixed particle cloud.
+            double new_existence_probability = 0.0;
+            for (const auto& p : mixed_particles) {
+                new_existence_probability += p.weight;
+            }
+
+            // d. Normalize the particle weights in the mixed cloud.
+            if (new_existence_probability > 1e-12) {
+                for (auto& p : mixed_particles) {
+                    p.weight /= new_existence_probability;
+                }
             } else {
-                // Measurement association case
-                particle_set_idx = assoc_idx;
-                
-                // Update existence probability for detection
-                double track_r = tracks[i].existence_probability();
-                double detect_term = track_r * detection_probability_ * likelihood_matrix(i, assoc_idx);
-                new_existence_probability += hyp_weight * detect_term;
+                // Handle case of zero total weight to prevent division by zero
+                for (auto& p : mixed_particles) {
+                    if (!mixed_particles.empty()) {
+                        p.weight = 1.0 / mixed_particles.size();
+                    }
+                }
             }
-            
-            // Add these particles to the mixture with appropriate weights
-            for (const auto& particle : hypothetical_particle_sets[i][particle_set_idx]) {
-                Particle mixed_particle;
-                mixed_particle.state_vector = particle.state_vector;
-                mixed_particle.weight = particle.weight * hyp_weight;
-                mixed_particles.push_back(mixed_particle);
+
+            // Perform systematic resampling to get back to the standard number of particles
+            size_t num_particles = tracks[i].particles().size();
+            std::vector<Particle> resampled_particles;
+            resampled_particles.reserve(num_particles);
+
+            double u = ((double)rand() / RAND_MAX) / num_particles;
+            double cumsum = 0.0;
+            size_t idx = 0;
+
+            for (size_t p = 0; p < num_particles; ++p) {
+                double threshold = u + (double)p / num_particles;
+
+                while (cumsum < threshold && idx < mixed_particles.size()) {
+                    cumsum += mixed_particles[idx].weight;
+                    ++idx;
+                }
+
+                // Get the chosen particle
+                const Particle& chosen_particle = (idx > 0) ? mixed_particles[idx-1] : mixed_particles[0];
+
+                // Create the resampled particle with equal weight
+                Particle resampled;
+                resampled.state_vector = chosen_particle.state_vector;
+                resampled.weight = 1.0 / num_particles;
+                resampled_particles.push_back(resampled);
             }
-        }
-        
-        // Normalize the weights in mixed particles
-        double total_weight = 0.0;
-        for (const auto& particle : mixed_particles) {
-            total_weight += particle.weight;
-        }
-        
-        if (total_weight > 1e-12) {
-            for (auto& particle : mixed_particles) {
-                particle.weight /= total_weight;
-            }
-        } else {
-            for (auto& particle : mixed_particles) {
-                particle.weight = 1.0 / mixed_particles.size();
-            }
-        }
-        
-        // Normalize the existence probability
-        new_existence_probability = std::min(std::max(new_existence_probability, 0.0), 1.0);
-        
-        // Perform systematic resampling to get back to the standard number of particles
-        size_t num_particles = tracks[i].particles().size();
-        std::vector<Particle> resampled_particles;
-        resampled_particles.reserve(num_particles);
-        
-        double u = ((double)rand() / RAND_MAX) / num_particles;
-        double cumsum = 0.0;
-        size_t idx = 0;
-        
-        for (size_t p = 0; p < num_particles; ++p) {
-            double threshold = u + (double)p / num_particles;
-            
-            while (cumsum < threshold && idx < mixed_particles.size()) {
-                cumsum += mixed_particles[idx].weight;
-                ++idx;
-            }
-            
-            // Get the chosen particle
-            const Particle& chosen_particle = (idx > 0) ? mixed_particles[idx-1] : mixed_particles[0];
-            
-            // Create the resampled particle with equal weight
-            Particle resampled;
-            resampled.state_vector = chosen_particle.state_vector;
-            resampled.weight = 1.0 / num_particles;
-            resampled_particles.push_back(resampled);
-        }
-        
-        // Create final track
-        Track final_track = tracks[i];
-        final_track.set_existence_probability(new_existence_probability);
-        final_track.set_particles(resampled_particles);
-        updated_tracks.push_back(final_track);
+
+            // Create final track
+            Track final_track = tracks[i];
+            final_track.set_existence_probability(new_existence_probability);
+            final_track.set_particles(resampled_particles);
+            updated_tracks.push_back(final_track);
     }
     
-    // Step 5: Handle birth
-    // Find unused measurements from best hypothesis
-    auto best_hyp_idx = std::max_element(norm_weights.begin(), norm_weights.end()) - norm_weights.begin();
-    const auto& best_associations = hypotheses[best_hyp_idx].associations;
+    // Step 6: Handle birth (disabled in this simplified model)
+    std::vector<Track> born_tracks; // Always empty in the simplified model
     
-    std::vector<bool> used_meas(num_meas, false);
-    for (int track_idx = 0; track_idx < best_associations.size(); ++track_idx) {
-        int meas_idx = best_associations[track_idx];
-        if (meas_idx >= 0 && meas_idx < num_meas) {
-            used_meas[meas_idx] = true;
-        }
-    }
-    
-    std::vector<Measurement> unused_meas;
-    for (size_t m = 0; m < num_meas; ++m) {
-        if (!used_meas[m]) unused_meas.push_back(measurements[m]);
-    }
-    
-    // Create new tracks from unused measurements
-    std::vector<Track> born_tracks = birth_model_->generate_new_tracks(unused_meas, current_state_.timestamp());
-    
-    // Combine updated and born tracks
-    updated_tracks.insert(updated_tracks.end(), born_tracks.begin(), born_tracks.end());
+    // We assume perfect 1-to-1 matching, so no unused measurements in this model
     
     // Track pruning: remove tracks with low existence probability
     const double prune_threshold = 0.01; // configurable

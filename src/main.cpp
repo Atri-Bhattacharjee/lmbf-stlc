@@ -2,6 +2,7 @@
 #include <pybind11/eigen.h>
 #include <pybind11/stl.h>
 #include <Eigen/Dense>
+#include <iostream>
 #include "datatypes.h"
 #include "models.h"
 #include "linear_propagator.h"
@@ -91,13 +92,12 @@ PYBIND11_MODULE(lmb_engine, m) {
     // Bind the main tracker class with direct constructor support
     pybind11::class_<SMC_LMB_Tracker, std::shared_ptr<SMC_LMB_Tracker>>(m, "SMC_LMB_Tracker")
         .def(pybind11::init<>(), "Default constructor for SMC_LMB_Tracker")
-        .def(pybind11::init<std::shared_ptr<IOrbitPropagator>, std::shared_ptr<ISensorModel>, std::shared_ptr<IBirthModel>, double, double>(),
+        .def(pybind11::init<std::shared_ptr<IOrbitPropagator>, std::shared_ptr<ISensorModel>, std::shared_ptr<IBirthModel>, double>(),
              pybind11::arg("propagator"),
              pybind11::arg("sensor_model"),
              pybind11::arg("birth_model"),
              pybind11::arg("survival_probability"),
-             pybind11::arg("detection_probability"),
-             "Constructor for SMC_LMB_Tracker with model dependencies")
+             "Constructor for SMC_LMB_Tracker with model dependencies (simplified version with no detection probability)")
         .def("predict", &SMC_LMB_Tracker::predict, "Runs the predict step for a given time delta")
         .def("update", &SMC_LMB_Tracker::update, "Runs the update step with measurements")
         .def("get_tracks", &SMC_LMB_Tracker::get_tracks, "Gets the current list of tracks", pybind11::return_value_policy::reference_internal)

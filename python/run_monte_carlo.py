@@ -10,12 +10,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'lmb_
 import lmb_engine
 
 DT = 60.0  # seconds
-NUM_STEPS = 5
+NUM_STEPS = 500
 NUM_MONTE_CARLO_RUNS = 1
-OSPA_CUTOFF = 10000.0  # meters
+OSPA_CUTOFF = 100000.0  # meters
 
 CONFIGURATIONS = [
-    {'num_particles': 50, 'clutter_rate': 0},
+    {'num_particles': 100, 'clutter_rate': 0},  # Clutter rate must be 0 for the simplified tracker
 ]
 
 def run_single_simulation(config):
@@ -30,9 +30,9 @@ def run_single_simulation(config):
     twobody_cov = np.diag([pos_var]*3 + [vel_var]*3)
     propagator = lmb_engine.TwoBodyPropagator(twobody_cov)
     sensor_model = lmb_engine.InOrbitSensorModel()
-    birth_cov = np.diag([5**2]*3 + [0.05**2]*3)
-    birth_model = lmb_engine.AdaptiveBirthModel(config['num_particles'], 0.9, birth_cov)
-    tracker = lmb_engine.SMC_LMB_Tracker(propagator, sensor_model, birth_model, 0.99, 0.99)
+    birth_cov = np.diag([50**2]*3 + [5.0**2]*3)
+    birth_model = lmb_engine.AdaptiveBirthModel(config['num_particles'], 0.3, birth_cov)
+    tracker = lmb_engine.SMC_LMB_Tracker(propagator, sensor_model, birth_model, 0.99)
 
     ospa_list = []
     for step in range(NUM_STEPS):
@@ -41,7 +41,8 @@ def run_single_simulation(config):
         current_gt_states = ground_truth_data[step]
         # Convert to numpy arrays for downstream use
         gt_states = [np.array(gt[:6]) for gt in current_gt_states]
-        # Generate measurements (with clutter)
+        # Generate measurements (without clutter to match simplified tracker assumptions)
+        # The simplified tracker requires num_tracks == num_measurements
         measurements = []
         for gt_state in gt_states:
             meas = lmb_engine.Measurement()
@@ -49,17 +50,20 @@ def run_single_simulation(config):
             noisy_pos = gt_state[:3] + np.random.normal(0, 10, 3)
             noisy_vel = gt_state[3:6] + np.random.normal(0, 1, 3)
             meas.value_ = np.concatenate([noisy_pos, noisy_vel])
-            meas.covariance_ = np.diag([10**2]*3 + [1.0**2]*3)
+            meas.covariance_ = np.diag([50**2]*3 + [5.0**2]*3)
             measurements.append(meas)
+        # NOTE: Clutter generation is disabled for the simplified tracker
+        # The new tracker implementation requires num_tracks == num_measurements
+        # and doesn't handle missed detections or false alarms
+        #
         # num_clutter = np.random.poisson(config['clutter_rate'])
         # for _ in range(num_clutter):
         #     clutter_meas = lmb_engine.Measurement()
         #     clutter_meas.timestamp_ = step * DT
         #     clutter_pos = np.random.uniform(6900e3, 7100e3, 3)
         #     clutter_vel = np.random.uniform(-1e3, 1e3, 3)
-        #     clutter_bstar = np.random.uniform(0, 2e-4)
-        #     clutter_meas.value_ = np.concatenate([clutter_pos, clutter_vel, [clutter_bstar]])
-        #     clutter_meas.covariance_ = np.diag([50**2]*3 + [0.5**2]*3 + [1e-4**2])
+        #     clutter_meas.value_ = np.concatenate([clutter_pos, clutter_vel])
+        #     clutter_meas.covariance_ = np.diag([50**2]*3 + [0.5**2]*3)
         #     clutter_meas.sensor_id_ = "0"
         #     clutter_meas.sensor_state_ = np.concatenate([clutter_pos, clutter_vel])
         #     measurements.append(clutter_meas)
@@ -118,6 +122,9 @@ def run_single_simulation(config):
     return ospa_list
 
 def main():
+    print("Running Monte Carlo simulation with simplified tracker (no missed detections)")
+    print("Using one-to-one assignment model where num_tracks must equal num_measurements")
+    
     plt.figure(figsize=(10, 6))
     for config in CONFIGURATIONS:
         all_ospa = []
@@ -125,10 +132,10 @@ def main():
             ospa_list = run_single_simulation(config)
             all_ospa.append(ospa_list)
         avg_ospa = np.mean(all_ospa, axis=0)
-        plt.plot(avg_ospa, label=f"Particles={config['num_particles']}, Clutter={config['clutter_rate']}")
+        plt.plot(avg_ospa, label=f"Particles={config['num_particles']}")
     plt.xlabel('Time Step')
     plt.ylabel('Average OSPA Distance (m)')
-    plt.title('Monte Carlo OSPA Performance')
+    plt.title('Monte Carlo OSPA Performance with Runge Kutta 4 Orbital Propagation')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()

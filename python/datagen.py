@@ -23,7 +23,7 @@ except ImportError:
     sys.exit(1)
 
 # Simulation parameters
-N_STEPS = 20
+N_STEPS = 1000
 DT = 60.0  # seconds
 OUTPUT_FILE = 'ground_truth_data.json'
 

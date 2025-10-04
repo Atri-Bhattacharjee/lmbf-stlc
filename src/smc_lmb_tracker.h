@@ -30,7 +30,6 @@ private:
     std::shared_ptr<ISensorModel> sensor_model_;       //!< Shared pointer to the sensor model
     std::shared_ptr<IBirthModel> birth_model_;         //!< Shared pointer to the birth model
     double survival_probability_;                       //!< Configuration parameter for track survival probability
-    double detection_probability_;                      //!< Probability of detection (Pd)
 
 public:
     /**
@@ -49,8 +48,7 @@ public:
     SMC_LMB_Tracker(std::shared_ptr<IOrbitPropagator> propagator,
                    std::shared_ptr<ISensorModel> sensor_model,
                    std::shared_ptr<IBirthModel> birth_model,
-                   double survival_probability,
-                   double detection_probability);
+                   double survival_probability);
 
     /**
      * @brief Run the predict step of the filter
