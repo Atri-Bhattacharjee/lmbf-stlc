@@ -86,7 +86,13 @@ void SMC_LMB_Tracker::update(const std::vector<Measurement>& measurements) {
                 // Create an updated particle with Kalman update
                 Particle updated_particle;
                 
-                updated_particle.state_vector = current_particle.state_vector;
+                Eigen::VectorXd innovation = measurement.value_ - current_particle.state_vector;
+
+                // Simple Kalman gain calculation (can be refined later)
+                double kalman_gain_factor = 0.5;
+
+                // Update state using Kalman equation: x_new = x_old + K * innovation
+                updated_particle.state_vector = current_particle.state_vector + kalman_gain_factor * innovation;
                 
                 // Calculate likelihood and update weight
                 double particle_likelihood = sensor_model_->calculate_likelihood(current_particle, measurement);

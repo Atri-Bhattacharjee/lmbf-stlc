@@ -5,15 +5,11 @@
 #include <iostream>
 #include "datatypes.h"
 #include "models.h"
-#include "linear_propagator.h"
-#include "simple_sensor_model.h"
 #include "adaptive_birth_model.h"
 #include "smc_lmb_tracker.h"
-#include "sgp4_propagator.h"
 #include "in_orbit_sensor_model.h"
 #include "assignment.h"
 #include "metrics.h"
-
 #include "two_body_propagator.h"
 
 PYBIND11_MODULE(lmb_engine, m) {
@@ -61,14 +57,6 @@ PYBIND11_MODULE(lmb_engine, m) {
     pybind11::class_<IBirthModel, std::shared_ptr<IBirthModel>>(m, "IBirthModel");
     
     // Bind concrete model implementations
-    pybind11::class_<LinearPropagator, IOrbitPropagator, std::shared_ptr<LinearPropagator>>(m, "LinearPropagator")
-        .def(pybind11::init<>(), "Default constructor for LinearPropagator")
-        .def("propagate", &LinearPropagator::propagate);
-    
-    pybind11::class_<SimpleSensorModel, ISensorModel, std::shared_ptr<SimpleSensorModel>>(m, "SimpleSensorModel")
-        .def(pybind11::init<>(), "Default constructor for SimpleSensorModel")
-        .def("calculate_likelihood", &SimpleSensorModel::calculate_likelihood);
-    
     pybind11::class_<AdaptiveBirthModel, IBirthModel, std::shared_ptr<AdaptiveBirthModel>>(m, "AdaptiveBirthModel")
         .def(pybind11::init<int, double, const Eigen::MatrixXd&>(),
              pybind11::arg("particles_per_track"),
@@ -76,10 +64,6 @@ PYBIND11_MODULE(lmb_engine, m) {
              pybind11::arg("initial_covariance"),
              "Constructor for AdaptiveBirthModel")
         .def("generate_new_tracks", &AdaptiveBirthModel::generate_new_tracks);
-    
-    pybind11::class_<SGP4Propagator, IOrbitPropagator, std::shared_ptr<SGP4Propagator>>(m, "SGP4Propagator")
-        .def(pybind11::init<const Eigen::MatrixXd&>(), pybind11::arg("process_noise_covariance"))
-        .def("propagate", &SGP4Propagator::propagate);
 
     pybind11::class_<TwoBodyPropagator, IOrbitPropagator, std::shared_ptr<TwoBodyPropagator>>(m, "TwoBodyPropagator")
         .def(pybind11::init<const Eigen::MatrixXd&>(), pybind11::arg("process_noise_covariance"))

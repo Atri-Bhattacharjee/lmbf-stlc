@@ -31,8 +31,8 @@ OUTPUT_FILE = 'ground_truth_data.json'
 initial_states = [
     # Ground Truth Object 1
     np.array([7000e3, 0.0, 0.0, 0.0, 7.546e3, 10.0]),
-    # Ground Truth Object 2
-    np.array([7000.2e3, 0.0, 0.0, 0.0, 7.546e3, -10.0])
+    # # Ground Truth Object 2
+    # np.array([0.0, -7000.2e3, 0.0, -7.546e3, 0.0, -10.0])
 ]
 
 # Zero process noise for deterministic ground truth

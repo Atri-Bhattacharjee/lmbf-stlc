@@ -16,11 +16,8 @@ find_package(pybind11 REQUIRED)
 # Create the Python module target named 'lmb_engine' that will be importable in Python
 pybind11_add_module(lmb_engine 
     src/main.cpp 
-    src/linear_propagator.cpp 
-    src/simple_sensor_model.cpp
     src/adaptive_birth_model.cpp
     src/smc_lmb_tracker.cpp
-    src/sgp4_propagator.cpp
     src/in_orbit_sensor_model.cpp
     src/assignment.cpp
     src/metrics.cpp
