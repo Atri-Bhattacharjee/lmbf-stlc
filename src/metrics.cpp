@@ -7,31 +7,36 @@
 static Eigen::VectorXd mean_state(const Track& track) {
     const auto& particles = track.particles();
     if (particles.empty()) return Eigen::VectorXd::Zero(6);
-    Eigen::VectorXd sum = Eigen::VectorXd::Zero(6);
-    double total_weight = 0.0;
-    for (const auto& p : particles) {
-        sum += p.state_vector.head(6) * p.weight;
-        total_weight += p.weight;
+    
+    // In the EKF implementation, we typically have a single Gaussian component
+    // So we just return its mean directly
+    if (particles.size() == 1) {
+        return particles[0].mean.head(6);
     }
-    if (total_weight == 0.0) return Eigen::VectorXd::Zero(6);
-    return sum / total_weight;
+    
+    // For backward compatibility with multi-component implementations
+    Eigen::VectorXd sum = Eigen::VectorXd::Zero(6);
+    for (const auto& p : particles) {
+        sum += p.mean.head(6) / particles.size();
+    }
+    return sum;
 }
 
-// Helper: Compute mean state of a track's particles (returns 7D, but for metrics use only first 6)
+// Helper: Compute mean state of a track's particles (returns N-D state, but for metrics use only first 6)
 Eigen::VectorXd mean_state6d(const std::vector<Particle>& particles) {
     if (particles.empty()) return Eigen::VectorXd();
-    int dim = particles[0].state_vector.size();
-    Eigen::VectorXd mean = Eigen::VectorXd::Zero(dim);
-    double total_weight = 0.0;
-    for (const auto& p : particles) {
-        if (p.state_vector.size() != dim) {
-            return Eigen::VectorXd();
-        }
-        mean += p.state_vector * p.weight;
-        total_weight += p.weight;
+    
+    // In EKF-based filter, we only have one Gaussian component per track
+    // and we can directly return its mean
+    if (particles.size() == 1) {
+        return particles[0].mean.head(6);
     }
-    if (total_weight > 0.0) mean /= total_weight;
-    // Truncate to first 6 elements for metric comparison
+    
+    // For backward compatibility, if there are multiple particles
+    int dim = particles[0].mean.size();
+    Eigen::VectorXd mean = particles[0].mean;
+    // In the EKF implementation, we don't need to normalize by weight
+    // Just return the first 6 components for position and velocity
     return mean.head(6);
 }
 

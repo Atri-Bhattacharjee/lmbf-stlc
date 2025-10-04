@@ -28,16 +28,17 @@ struct TrackLabel {
 };
 
 /**
- * @brief A POD structure representing a single, weighted state hypothesis
+ * @brief A POD structure representing a Gaussian state distribution component
  * 
- * Each particle represents one possible state of the tracked object,
- * with an associated probability weight.
+ * Each particle represents a Gaussian distribution (mean and covariance)
+ * of the tracked object's state.
  */
 struct Particle {
-    //! [x, y, z, vx, vy, vz] where position is ECI in m, velocity is ECI in m/s
-    Eigen::VectorXd state_vector;
-    double weight;  //!< The probability weight of this particle
-    Particle() : state_vector(6), weight(0.0) {}
+    //! The 6D mean state vector [x, y, z, vx, vy, vz] where position is ECI in m, velocity is ECI in m/s
+    Eigen::VectorXd mean;
+    //! The 6x6 state covariance matrix
+    Eigen::MatrixXd covariance;
+    Particle() : mean(Eigen::VectorXd::Zero(6)), covariance(Eigen::MatrixXd::Zero(6, 6)) {}
 };
 
 /**

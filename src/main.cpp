@@ -5,11 +5,8 @@
 #include <iostream>
 #include "datatypes.h"
 #include "models.h"
-#include "linear_propagator.h"
-#include "simple_sensor_model.h"
 #include "adaptive_birth_model.h"
 #include "smc_lmb_tracker.h"
-#include "sgp4_propagator.h"
 #include "in_orbit_sensor_model.h"
 #include "assignment.h"
 #include "metrics.h"
@@ -27,8 +24,8 @@ PYBIND11_MODULE(lmb_engine, m) {
     
     pybind11::class_<Particle>(m, "Particle")
         .def(pybind11::init<>())
-        .def_readwrite("state_vector", &Particle::state_vector)
-        .def_readwrite("weight", &Particle::weight);
+        .def_readwrite("mean", &Particle::mean)
+        .def_readwrite("covariance", &Particle::covariance);
     
     pybind11::class_<Measurement>(m, "Measurement")
         .def(pybind11::init<>())
@@ -61,13 +58,6 @@ PYBIND11_MODULE(lmb_engine, m) {
     pybind11::class_<IBirthModel, std::shared_ptr<IBirthModel>>(m, "IBirthModel");
     
     // Bind concrete model implementations
-    pybind11::class_<LinearPropagator, IOrbitPropagator, std::shared_ptr<LinearPropagator>>(m, "LinearPropagator")
-        .def(pybind11::init<>(), "Default constructor for LinearPropagator")
-        .def("propagate", &LinearPropagator::propagate);
-    
-    pybind11::class_<SimpleSensorModel, ISensorModel, std::shared_ptr<SimpleSensorModel>>(m, "SimpleSensorModel")
-        .def(pybind11::init<>(), "Default constructor for SimpleSensorModel")
-        .def("calculate_likelihood", &SimpleSensorModel::calculate_likelihood);
     
     pybind11::class_<AdaptiveBirthModel, IBirthModel, std::shared_ptr<AdaptiveBirthModel>>(m, "AdaptiveBirthModel")
         .def(pybind11::init<int, double, const Eigen::MatrixXd&>(),
@@ -77,17 +67,19 @@ PYBIND11_MODULE(lmb_engine, m) {
              "Constructor for AdaptiveBirthModel")
         .def("generate_new_tracks", &AdaptiveBirthModel::generate_new_tracks);
     
-    pybind11::class_<SGP4Propagator, IOrbitPropagator, std::shared_ptr<SGP4Propagator>>(m, "SGP4Propagator")
-        .def(pybind11::init<const Eigen::MatrixXd&>(), pybind11::arg("process_noise_covariance"))
-        .def("propagate", &SGP4Propagator::propagate);
+
 
     pybind11::class_<TwoBodyPropagator, IOrbitPropagator, std::shared_ptr<TwoBodyPropagator>>(m, "TwoBodyPropagator")
-        .def(pybind11::init<const Eigen::MatrixXd&>(), pybind11::arg("process_noise_covariance"))
-        .def("propagate", &TwoBodyPropagator::propagate);
+        .def(pybind11::init<>())
+        .def("propagate", &TwoBodyPropagator::propagate)
+        .def("get_motion_jacobian", &TwoBodyPropagator::get_motion_jacobian);
     
     pybind11::class_<InOrbitSensorModel, ISensorModel, std::shared_ptr<InOrbitSensorModel>>(m, "InOrbitSensorModel")
         .def(pybind11::init<>(), "Default constructor for InOrbitSensorModel")
-        .def("calculate_likelihood", &InOrbitSensorModel::calculate_likelihood);
+        .def("calculate_likelihood", &InOrbitSensorModel::calculate_likelihood)
+        .def("predict_measurement", &InOrbitSensorModel::predict_measurement)
+        .def("get_measurement_jacobian", &InOrbitSensorModel::get_measurement_jacobian)
+        .def("ekf_update", &InOrbitSensorModel::ekf_update);
     
     // Bind the main tracker class with direct constructor support
     pybind11::class_<SMC_LMB_Tracker, std::shared_ptr<SMC_LMB_Tracker>>(m, "SMC_LMB_Tracker")

@@ -15,16 +15,6 @@ std::vector<Track> AdaptiveBirthModel::generate_new_tracks(const std::vector<Mea
     // Initialize empty vector for new tracks
     std::vector<Track> new_tracks;
     
-    // Initialize random number generator
-    std::mt19937 gen(std::random_device{}());
-    
-    // Create standard normal distribution
-    std::normal_distribution<> dist(0.0, 1.0);
-    
-    // Pre-calculate Cholesky decomposition of the initial covariance matrix
-    Eigen::LLT<Eigen::MatrixXd> llt(initial_covariance_);
-    Eigen::MatrixXd L = llt.matrixL();
-    
     // Loop through each unused measurement
     for (size_t measurement_idx = 0; measurement_idx < unused_measurements.size(); ++measurement_idx) {
         const auto& measurement = unused_measurements[measurement_idx];
@@ -34,36 +24,25 @@ std::vector<Track> AdaptiveBirthModel::generate_new_tracks(const std::vector<Mea
         label.birth_time = static_cast<uint64_t>(current_time);
         label.index = static_cast<uint32_t>(measurement_idx);
         
-        // Create empty particle vector for the new track
-        std::vector<Particle> particles;
-        particles.reserve(particles_per_track_);
+        // In the EKF implementation, we use a single Gaussian component instead of multiple particles
+        std::vector<Particle> gaussian_components;
         
-    // Define the mean state vector
-    // Use the full 6D measurement value as the mean state
-    Eigen::VectorXd mean_state(6);
-    mean_state = measurement.value_;
+        // Define the mean state vector - use the full 6D measurement value as the mean state
+        Eigen::VectorXd mean_state = measurement.value_;
         
-        // Generate particles
-        for (int particle_idx = 0; particle_idx < particles_per_track_; ++particle_idx) {
-            Particle particle;
-            // Generate 6x1 vector of standard normal random numbers
-            Eigen::VectorXd standard_normal_vector(6);
-            for (int i = 0; i < 6; ++i) {
-                standard_normal_vector(i) = dist(gen);
-            }
-            // Create the final sampled state vector using Cholesky decomposition
-            // sampled_state = mean_state + L * standard_normal_vector
-            Eigen::VectorXd sampled_state = mean_state + L * standard_normal_vector;
-            // Assign the sampled state to the particle's state vector
-            particle.state_vector = sampled_state;
-            // Assign equal weight to each particle
-            particle.weight = 1.0 / particles_per_track_;
-            // Add the particle to the track's particle vector
-            particles.push_back(particle);
-        }
+        // Create a single Gaussian component
+        Particle gaussian_component;
+        gaussian_component.mean = mean_state;
+        gaussian_component.covariance = initial_covariance_;
         
-        // Create the Track with the label, existence probability, and particles
-        Track track(label, initial_existence_probability_, particles);
+        // Add the Gaussian component to the track
+        gaussian_components.push_back(gaussian_component);
+        
+        // For multi-component Gaussian mixtures, we could add more components here
+        // In this simple implementation, we just use a single component
+        
+        // Create the Track with the label, existence probability, and Gaussian components
+        Track track(label, initial_existence_probability_, gaussian_components);
         
         // Add the fully formed Track to the new_tracks vector
         new_tracks.push_back(track);
